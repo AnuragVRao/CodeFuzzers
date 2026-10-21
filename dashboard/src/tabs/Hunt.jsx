@@ -1,10 +1,23 @@
-// Hunt tab: how fast each strategy finds the planted bug (hard-tier problems). Median
-// tests-to-bug per strategy with IQR and every individual run, the Mann–Whitney comparisons
-// (Holm-corrected), and how time-to-bug scales with the number of workers.
+// Hunt tab: how fast each strategy finds the planted bug (hard-tier problems). Dot plot of
+// tests-to-bug per strategy (median line, IQR whisker, every run as a jittered dot, censored
+// runs as "x" at the top), the Mann–Whitney comparisons, and time-to-bug vs workers.
 import { useState } from "react";
-import { Bar, CartesianGrid, Cell, ComposedChart, ErrorBar, Legend, Line, LineChart, ResponsiveContainer, Scatter,
+import { CartesianGrid, LabelList, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Scatter, ScatterChart,
   Tooltip, XAxis, YAxis } from "recharts";
 import { Card, NoData, ORDER, Select, colorOf, fmt, uniq } from "../ui.jsx";
+
+// Powers of ten (and 2x, 5x when the range is narrow) inside [lo, hi], for readable log axes.
+function logTicks(lo, hi) {
+  const t = [];
+  for (let e = Math.floor(Math.log10(lo)); e <= Math.ceil(Math.log10(hi)); e++)
+    for (const m of hi / lo < 100 ? [1, 2, 5] : [1]) {
+      const v = m * 10 ** e;
+      if (v >= lo && v <= hi) t.push(v);
+    }
+  return t;
+}
+
+const jitter = (k) => (((k * 0.618034) % 1) - 0.5) * 0.36; // deterministic, by run index
 
 export default function Hunt({ data }) {
   const rows = data.hunt;
@@ -17,44 +30,56 @@ export default function Hunt({ data }) {
   const ws = uniq(mine.map((r) => r.workers)).sort((a, b) => a - b);
   const w = ws.includes(Number(workers)) ? Number(workers) : ws[0];
   const sel = ORDER.map((s) => mine.find((r) => r.strategy === s && r.workers === w)).filter(Boolean);
-  const bars = sel.map((r) => ({
-    strategy: r.strategy,
-    median: r.tests_median != null ? Math.max(r.tests_median, 0.5) : null,
-    err: r.tests_median != null && r.tests_q1 != null && r.tests_q3 != null
-      ? [Math.max(0, r.tests_median - r.tests_q1), Math.max(0, r.tests_q3 - r.tests_median)] : [0, 0],
-  }));
-  const dots = sel.flatMap((r) => r.values.filter((v) => v != null).map((v) => ({ strategy: r.strategy, run: Math.max(v, 0.5) })));
-  const censored = sel.map((r) => `${r.strategy}: ${r.censored}`).join(", ");
+  const pos = (v) => Math.max(v, 0.5); // tests_before can be 0; keep it on the log axis
+  const plotted = sel.flatMap((r) => [...r.values.filter((v) => v != null), r.tests_q1, r.tests_q3].filter((v) => v != null).map(pos));
+  const lo = Math.min(...plotted, 1) / 2;
+  const hi = Math.max(...plotted, 1) * 2;
+  const top = hi / 1.4; // where censored runs are drawn
+
   const tests = (data.hunt_tests || []).filter((t) => t.problem === problem);
   const scaling = data.hunt_time_scaling || [];
   const sw = uniq(scaling.map((r) => r.workers)).sort((a, b) => a - b);
   const tsPoints = sw.map((x) => Object.fromEntries([["workers", x],
-    ...scaling.filter((r) => r.workers === x).map((r) => [r.strategy, r.geomean_time_median])]));
+    ...scaling.filter((r) => r.workers === x && r.geomean_time_median).map((r) => [r.strategy, r.geomean_time_median * 1000])]));
+  const msVals = tsPoints.flatMap((p) => Object.entries(p).filter(([k]) => k !== "workers").map(([, v]) => v));
+  const msLo = Math.min(...msVals, 1) / 2, msHi = Math.max(...msVals, 1) * 2;
 
   return (
     <>
-      <Card title={`Tests until first bug — ${problem}`}>
+      <Card title={`Tests until first bug — ${problem}, ${w} workers`}>
         <div className="row">
           <Select label="problem (hard tier)" value={problem} options={probs} onChange={setProblem} />
           <Select label="workers" value={w} options={ws} onChange={setWorkers} />
         </div>
-        <ResponsiveContainer width="100%" height={320}>
-          <ComposedChart data={bars} margin={{ top: 10, right: 30, bottom: 25, left: 20 }}>
+        <ResponsiveContainer width="100%" height={340}>
+          <ScatterChart margin={{ top: 20, right: 30, bottom: 25, left: 20 }}>
             <CartesianGrid stroke="#eee" />
-            <XAxis dataKey="strategy" type="category" allowDuplicatedCategory={false}
-              label={{ value: "strategy", position: "insideBottom", offset: -15 }} />
-            <YAxis scale="log" domain={[0.5, "auto"]} allowDataOverflow width={80}
+            <XAxis type="number" dataKey="x" domain={[-0.6, sel.length - 0.4]} ticks={sel.map((_, i) => i)}
+              tickFormatter={(i) => sel[i]?.strategy ?? ""} label={{ value: "strategy", position: "insideBottom", offset: -15 }} />
+            <YAxis type="number" dataKey="y" scale="log" domain={[lo, hi]} ticks={logTicks(lo, hi)} allowDataOverflow
+              tickFormatter={(v) => fmt(v, 1)} width={80}
               label={{ value: "tests before bug (log)", angle: -90, position: "insideLeft", style: { textAnchor: "middle" } }} />
-            <Tooltip formatter={(v) => fmt(v, 0)} />
+            <Tooltip formatter={(v, n) => (n === "y" ? fmt(v, 0) : null)} />
             <Legend verticalAlign="top" />
-            <Bar dataKey="median" name="median (IQR)" fillOpacity={0.75} isAnimationActive={false}>
-              {bars.map((b) => <Cell key={b.strategy} fill={colorOf(data.meta, b.strategy)} />)}
-              <ErrorBar dataKey="err" width={6} stroke="#333" />
-            </Bar>
-            <Scatter data={dots} dataKey="run" name="individual runs" fill="#333" isAnimationActive={false} />
-          </ComposedChart>
+            {sel.map((r, i) => (
+              <Scatter key={r.strategy} name={r.strategy} fill={colorOf(data.meta, r.strategy)} isAnimationActive={false}
+                data={r.values.map((v, k) => (v == null ? null : { x: i + jitter(k), y: pos(v) })).filter(Boolean)} />
+            ))}
+            {sel.map((r, i) => r.tests_q1 != null && r.tests_q3 != null && (
+              <ReferenceLine key={`iqr${i}`} segment={[{ x: i, y: pos(r.tests_q1) }, { x: i, y: pos(r.tests_q3) }]}
+                stroke="#333" strokeWidth={2} />
+            ))}
+            {sel.map((r, i) => r.tests_median != null && (
+              <ReferenceLine key={`med${i}`} segment={[{ x: i - 0.28, y: pos(r.tests_median) }, { x: i + 0.28, y: pos(r.tests_median) }]}
+                stroke="#111" strokeWidth={3} />
+            ))}
+            <Scatter name="censored (no bug before time limit)" shape="cross" fill="#C0392B" isAnimationActive={false}
+              data={sel.flatMap((r, i) => r.values.map((v, k) => (v == null ? { x: i + jitter(k), y: top, label: "censored" } : null)).filter(Boolean))}>
+              <LabelList dataKey="label" position="top" fontSize={11} />
+            </Scatter>
+          </ScatterChart>
         </ResponsiveContainer>
-        <p className="explain">Runs without a bug before the time limit (censored) — {censored}.</p>
+        <p className="explain">Dots are individual runs; the thick bar is the median and the vertical line the interquartile range.</p>
       </Card>
       <Card title="Statistical comparisons (Mann–Whitney U, Holm-corrected)">
         {tests.length ? (
@@ -79,9 +104,10 @@ export default function Hunt({ data }) {
               <CartesianGrid stroke="#eee" />
               <XAxis dataKey="workers" type="number" ticks={sw} domain={["dataMin", "dataMax"]}
                 label={{ value: "workers (threads)", position: "insideBottom", offset: -15 }} />
-              <YAxis width={80} tickFormatter={(v) => fmt(v, 3)}
-                label={{ value: "median time to bug (s)", angle: -90, position: "insideLeft", style: { textAnchor: "middle" } }} />
-              <Tooltip formatter={(v) => fmt(v, 4)} />
+              <YAxis scale="log" domain={[msLo, msHi]} ticks={logTicks(msLo, msHi)} allowDataOverflow width={80}
+                tickFormatter={(v) => fmt(v, 1)}
+                label={{ value: "median time to bug (ms, log)", angle: -90, position: "insideLeft", style: { textAnchor: "middle" } }} />
+              <Tooltip formatter={(v) => `${fmt(v, 2)} ms`} />
               <Legend verticalAlign="top" />
               {ORDER.filter((s) => scaling.some((r) => r.strategy === s)).map((s) => (
                 <Line key={s} dataKey={s} stroke={colorOf(data.meta, s)} strokeWidth={2} isAnimationActive={false} />

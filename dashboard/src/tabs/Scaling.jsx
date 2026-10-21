@@ -1,6 +1,7 @@
 // Scaling tab: strong-scaling results of the "scale" experiment. Pick a problem, a workload
 // (extra pool ops K / write fraction F) and a metric; one line per strategy with IQR error bars,
-// an ideal line for speed-up/efficiency, and predicted throughput for the K=50/F=0.5 workload.
+// dashed reference lines (ideal speed-up, y=1 for efficiency and vs-noshare), and predicted
+// throughput for the K=50/F=0.5 workload.
 import { useState } from "react";
 import { CartesianGrid, ErrorBar, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Card, NoData, ORDER, Select, colorOf, fmt, uniq } from "../ui.jsx";
@@ -9,6 +10,7 @@ const METRICS = {
   speedup: ["absolute speed-up (× vs noshare @ 1 worker)", (r) => r.tps_median / r.speedup_abs],
   efficiency: ["efficiency (speed-up / workers)", (r) => (r.tps_median / r.speedup_abs) * r.workers],
   throughput: ["throughput (tests / s)", () => 1],
+  vs_noshare: ["throughput / noshare throughput", (r) => r.tps_median / r.vs_noshare],
 };
 
 export default function Scaling({ data }) {
@@ -29,7 +31,7 @@ export default function Scaling({ data }) {
   const showPred = metric === "throughput" && wk === "50/0.5";
 
   const points = workers.map((w) => {
-    const p = { workers: w, ideal: metric === "speedup" ? w : metric === "efficiency" ? 1 : undefined };
+    const p = { workers: w, ideal: metric === "speedup" ? w : metric === "throughput" ? undefined : 1 };
     for (const r of sel.filter((r) => r.workers === w)) {
       const d = divisor(r);
       const y = r.tps_median / d;
@@ -48,7 +50,7 @@ export default function Scaling({ data }) {
           options={works.map((w) => ({ value: w, label: `K=${w.split("/")[0]}, F=${w.split("/")[1]}` }))} onChange={setWork} />
         <Select label="metric" value={metric} onChange={setMetric}
           options={[{ value: "speedup", label: "absolute speed-up" }, { value: "efficiency", label: "efficiency" },
-            { value: "throughput", label: "throughput" }]} />
+            { value: "throughput", label: "throughput" }, { value: "vs_noshare", label: "vs noshare (sharing cost)" }]} />
       </div>
       <ResponsiveContainer width="100%" height={380}>
         <LineChart data={points} margin={{ top: 10, right: 30, bottom: 25, left: 20 }}>
@@ -59,7 +61,9 @@ export default function Scaling({ data }) {
             tickFormatter={(v) => fmt(v, 2)} width={80} />
           <Tooltip formatter={(v) => fmt(v, 2)} />
           <Legend verticalAlign="top" />
-          {metric !== "throughput" && <Line dataKey="ideal" name="ideal" stroke="#999" strokeDasharray="6 4" dot={false} />}
+          {metric !== "throughput" && (
+            <Line dataKey="ideal" name={metric === "speedup" ? "ideal" : "reference (1.0)"} stroke="#999" strokeDasharray="6 4" dot={false} />
+          )}
           {strategies.map((s) => (
             <Line key={s} dataKey={s} name={s} stroke={colorOf(data.meta, s)} strokeWidth={2} isAnimationActive={false}>
               <ErrorBar dataKey={`${s}_err`} width={4} stroke={colorOf(data.meta, s)} />
@@ -72,9 +76,10 @@ export default function Scaling({ data }) {
         </LineChart>
       </ResponsiveContainer>
       <p className="explain">
-        Each line is one pool strategy; error bars span the interquartile range of the repeated runs. Absolute
-        speed-up compares against the no-sharing baseline on one worker, so a line close to the dashed ideal
-        means the pool adds no overhead as workers are added.
+        Compare each strategy with noshare (navy), not with the ideal line. noshare shares nothing, so its curve is the
+        hardware limit (hyper-threads, efficiency cores, process start-up). The gap between a strategy and noshare is the
+        cost of sharing the pool. Scale runs use identical random recipes for every strategy, so all of them do the same
+        work per test.
       </p>
     </Card>
   );

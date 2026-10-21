@@ -3,7 +3,8 @@
 Usage: python3 tools/run.py --exp scale|hunt|pinning --preset quick|full [--dry-run]
 Each run writes results/raw/<exp>/<problem>/<strategy>_w<W>_k<K>_f<F>_r<R>[_pinX].json and is
 skipped if that file exists (resumable); quick presets use <exp>-quick so they never count as full runs. Run r uses --seed 1000+r; worker i is pinned to the
-i-th CPU of CPU_ORDER. Prints the plan size, an ETA, and one progress line per run.
+i-th CPU of CPU_ORDER. Scale presets use --recipes random (equal work per test), hunt and pinning
+keep guided recipes. Prints the plan size, an ETA, and one progress line per run.
 """
 import argparse, json, os, subprocess, sys, time
 from pathlib import Path
@@ -27,9 +28,10 @@ def hard_problems():
 def plan(exp, preset):
     """List of run dicts: problem, strategy, workers, k, f, repeat, mode, tests, time_limit, pin."""
     runs = []
+    recipes = "random" if exp == "scale" else "guided"  # scale: equal work per test for every strategy
     def add(problem, strategy, w, k, f, r, mode, tests=0, limit=0, pin=None):
         runs.append(dict(problem=problem, strategy=strategy, workers=w, k=k, f=f, repeat=r, mode=mode,
-                         tests=tests, time_limit=limit, pin=pin))
+                         tests=tests, time_limit=limit, pin=pin, recipes=recipes))
     if exp == "scale":
         full = preset == "full"
         probs = ["range_add_range_min", "zalgorithm", "vertex_add_path_sum"] if full else ["range_add_range_min"]
@@ -88,7 +90,7 @@ def command(exp, run, cfg, tmp_out):
     return [str(FUZZER), "--build", str(ROOT / "build" / run["problem"]), "--checker", p["checker"],
             "--max-size", str(p["max_size"]), "--variants", str(p["variants"]),
             "--fast", "sol" if run["mode"] == "scale" else "bug", "--mode", run["mode"],
-            "--strategy", run["strategy"], "--workers", str(w), "--tests", str(run["tests"] or 1),
+            "--strategy", run["strategy"], "--recipes", run["recipes"], "--workers", str(w), "--tests", str(run["tests"] or 1),
             "--time-limit", str(run["time_limit"] or 60), "--seed", str(1000 + run["repeat"]),
             "--extra-ops", str(run["k"]), "--write-frac", str(run["f"]), "--cpus", cpus,
             "--out", str(tmp_out), "--bug-dir", str(bug_dir)]

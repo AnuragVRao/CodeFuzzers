@@ -28,16 +28,19 @@ function DiffText({ text, other }) {
 function BugCard({ b, open, onToggle }) {
   const cut = (k) => (b[`${k}_truncated`] ? " (truncated)" : "");
   return (
-    <div className={`card bug ${open ? "open" : ""}`} onClick={open ? undefined : onToggle}>
-      <h3 onClick={open ? onToggle : undefined}>{b.problem}</h3>
+    <div className={`card bug ${open ? "open" : ""}`} onClick={onToggle}>
+      <h3>{b.problem}</h3>
       <div className="meta">
         <span className={`badge ${b.tier === "hard" ? "yes" : "no"}`}>{b.tier}</span> {b.group} · {b.kind} · {b.category}
       </div>
       <div>{b.description}</div>
       <div className="meta">Trigger: {b.trigger}</div>
       <div>size {b.size_original} → <b>{b.size_shrunk}</b> · bytes {b.bytes_original} → <b>{b.bytes_shrunk}</b></div>
+      <button className="toggle" onClick={(e) => { e.stopPropagation(); onToggle(); }}>
+        {open ? "Hide failing test ▴" : "Show failing test ▾"}
+      </button>
       {open && (
-        <div className="outputs">
+        <div className="outputs" onClick={(e) => e.stopPropagation()}>
           <div>input{cut("input")}<pre className="mono">{b.input}</pre></div>
           <div>reference output{cut("ref_out")}<DiffText text={b.ref_out} other={b.fast_out} /></div>
           <div>buggy output{cut("fast_out")}<DiffText text={b.fast_out} other={b.ref_out} /></div>

@@ -57,6 +57,8 @@ beyond those listed here.
   Sharing methods share one pool and one global coverage map.
 - Three-way comparison: "random" (no pool, no guidance: every recipe random) vs
   "noshare" (private guidance per worker) vs a sharing strategy (shared guidance).
+- Scale experiments use --recipes random so every strategy does identical work per test;
+  only synchronisation differs. Hunt experiments use guided recipes.
 
 ## Environment
 WSL2 Ubuntu 24.04, 20 logical cores, g++ 13.3, Python 3.12.

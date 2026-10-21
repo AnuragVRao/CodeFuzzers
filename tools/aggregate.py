@@ -13,7 +13,9 @@ Formulas (tps = tests_per_sec; medians and quartiles over the repeats of one con
   ratio          = median_b / median_a (null if either median is censored)
   hunt_time_scaling = geometric mean over problems of time_median (censored medians skipped and counted)
   pinning ratio  = median(pinned tps) / median(unpinned tps);  shrink speedup = median wall(W=1) / median wall(W)
-  headline       = max speedup_abs, pinning ratio, bugs found/total, median(shrunk/original bytes),
+  mean_size      = median over repeats of the run's average generator size (null for older runs without it)
+  headline       = speedup_20_<s>_k0 = median over scale problems of speedup_abs (s, K=0, F=0, 20 workers)
+                   for s = rwlock and noshare; pinning ratio, bugs found/total, median(shrunk/original bytes),
                    median over problems of shrink speedup at 20 workers
 Usage: python3 tools/aggregate.py [--selftest]
 """
@@ -66,9 +68,12 @@ def section(rows, exp):
 
 
 def scale_section(rows, bench):
-    g = defaultdict(list)
+    g, sizes = defaultdict(list), defaultdict(list)
     for r in rows:
-        g[(r["problem"], r["strategy"], int(r["K"]), float(r["F"]), int(r["workers"]))].append(float(r["tests_per_sec"]))
+        key = (r["problem"], r["strategy"], int(r["K"]), float(r["F"]), int(r["workers"]))
+        g[key].append(float(r["tests_per_sec"]))
+        if r.get("mean_size"):  # missing in runs made before mean_size existed
+            sizes[key].append(float(r["mean_size"]))
     med = {k: quant(v, 50) for k, v in g.items()}
     pb = {(r["strategy"], int(r["extra_ops"]), float(r["write_frac"]), int(r["threads"])): float(r["tests_per_sec"])
           for r in bench}
@@ -80,7 +85,7 @@ def scale_section(rows, bench):
         bench_tps = pb.get((s, k, f, w))
         out.append(dict(problem=p, strategy=s, K=k, F=f, workers=w, n=len(v), **qstats(v, "tps"),
                         speedup_abs=num(sp), speedup_rel=num(m / self1), efficiency_abs=num(sp / w),
-                        vs_noshare=num(m / nsw),
+                        vs_noshare=num(m / nsw), mean_size=num(quant(sizes[(p, s, k, f, w)], 50)) if sizes[(p, s, k, f, w)] else None,
                         predicted_tps=num(min(nsw, bench_tps)) if bench_tps is not None else None))
     return out
 
@@ -188,11 +193,13 @@ def shrink_section(gallery, scaling):
 
 
 def headline(scale, pinning, shrink, bugs_total):
-    best = max((r for r in scale if r["speedup_abs"] is not None), key=lambda r: r["speedup_abs"], default=None)
+    def sp20(strategy):
+        v = [r["speedup_abs"] for r in scale if (r["strategy"], r["K"], r["F"], r["workers"]) == (strategy, 0, 0.0, 20)
+             and r["speedup_abs"] is not None]
+        return num(quant(v, 50)) if v else None
     g = shrink["gallery"]
     s20 = [r["speedup"] for r in shrink["scaling"] if r["workers"] == 20 and r["speedup"] is not None]
-    return dict(max_speedup_abs=best and best["speedup_abs"],
-                max_speedup_at=best and {k: best[k] for k in ("strategy", "problem", "K", "F", "workers")},
+    return dict(speedup_20_rwlock_k0=sp20("rwlock"), speedup_20_noshare_k0=sp20("noshare"),
                 pinning_ratio=pinning.get("ratio"), bugs_found=sum(bool(r["mismatch_ok"]) for r in g),
                 bugs_total=bugs_total,
                 median_shrink_bytes_ratio=num(quant([r["bytes_shrunk"] / r["bytes_original"] for r in g], 50)) if g else None,

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Flattens every fuzzer result under results/raw/<experiment>/<problem>/*.json into
 results/runs.csv, one row per run (config, throughput, coverage, first bug, outcome counts, git
-commit/dirty as stamped by run.py; empty for runs made before run.py recorded them).
+commit/dirty as stamped by run.py, recipes and mean_size; empty for older runs without them).
 The repeat index and pinning come from the file name (..._r<R>[_pinX].json).
 Usage: python3 tools/flatten.py
 """
@@ -12,7 +12,7 @@ RAW = problems.ROOT / "results" / "raw"
 OUT = problems.ROOT / "results" / "runs.csv"
 COLS = ["experiment", "problem", "strategy", "workers", "K", "F", "repeat", "pinned", "wall_s", "tests",
         "tests_per_sec", "cov_features", "pool_entries", "new_cov_reports", "bug_found", "bug_tests_before",
-        "bug_time_s", "bug_kind", "ok", "WA", "RE", "TLE", "invalid", "gen_skip", "git_commit", "git_dirty"]
+        "bug_time_s", "bug_kind", "recipes", "mean_size", "ok", "WA", "RE", "TLE", "invalid", "gen_skip", "git_commit", "git_dirty"]
 
 
 def main():
@@ -28,6 +28,7 @@ def main():
                          pool_entries=d["pool_entries"], new_cov_reports=d["new_cov_reports"],
                          bug_found=int(bug is not None), bug_tests_before=bug["tests_before"] if bug else "",
                          bug_time_s=bug["time_s"] if bug else "", bug_kind=bug["kind"] if bug else "",
+                         recipes=c.get("recipes", ""), mean_size=d.get("mean_size", ""),
                          git_commit=d.get("git_commit", ""), git_dirty=int(d.get("git_dirty", False)),
                          **d["outcomes"]))
     OUT.parent.mkdir(parents=True, exist_ok=True)

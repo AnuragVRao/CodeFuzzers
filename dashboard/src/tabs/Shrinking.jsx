@@ -35,7 +35,7 @@ export default function Shrinking({ data }) {
           </ResponsiveContainer>
         ) : <NoData />}
       </Card>
-      <Card title="Shrink results (sorted by remaining size)">
+      <Card title="Shrink results (sorted by % of bytes kept)">
         <table>
           <thead><tr><th>problem</th><th>tier</th><th>size</th><th>bytes</th><th>kept</th><th>tests</th><th>time</th></tr></thead>
           <tbody>

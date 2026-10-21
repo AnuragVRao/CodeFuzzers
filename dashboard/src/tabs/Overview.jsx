@@ -3,20 +3,20 @@
 import { Card, NoData, fmt } from "../ui.jsx";
 
 const STEPS = [
-  ["Preparation", "Build binaries (fork-server runtime, trace-pc coverage) and calibrate planted bugs."],
-  ["Control", "Sanity-check every problem: correct solution vs brute force, no false alarms."],
-  ["Timed run", "W worker threads fuzz in parallel, sharing (or not) one pool of coverage recipes."],
-  ["Shrinking", "Search generator space in parallel for the smallest input that still fails."],
-  ["Aggregation", "Medians, IQRs, Mann–Whitney tests and charts from every recorded run."],
+  ["Preparation", "Library Checker problems curated and bundled (generator, brute reference, fast solution, checker); lightweight and path-tracking builds."],
+  ["Control", "Python orchestrator varies workers, strategy, read/write mix and seed; pins cores; repeats every run."],
+  ["Timed run", "Workers take a recipe from the shared pool, generate the test, run reference and fast solution, compare, and add recipes that reach new coverage."],
+  ["Shrinking", "Parallel generator-space shrinking finds the smallest input that still fails, then re-validates it."],
+  ["Aggregation", "Medians, IQRs and Mann–Whitney tests across workers, strategies and workloads; charts for speed-up, efficiency and time to bug."],
 ];
 
 export default function Overview({ data }) {
   const m = data.meta;
   if (!m?.headline) return <NoData />;
   const h = m.headline;
-  const at = h.max_speedup_at;
   const cards = [
-    [`${fmt(h.max_speedup_abs, 2)}×`, `max absolute speed-up${at ? ` (${at.strategy}, ${at.workers} workers, ${at.problem})` : ""}`],
+    [h.speedup_20_rwlock_k0 ? `${fmt(h.speedup_20_rwlock_k0, 1)}×` : "—", "speed-up at 20 workers (rwlock, realistic workload)",
+      `hardware ceiling (no sharing): ${h.speedup_20_noshare_k0 ? `${fmt(h.speedup_20_noshare_k0, 1)}×` : "—"}`],
     [h.pinning_ratio ? `+${fmt((h.pinning_ratio - 1) * 100, 0)}%` : "—", "throughput gain from CPU pinning (8 workers)"],
     [`${h.bugs_found}/${h.bugs_total}`, "planted bugs found, shrunk and re-validated"],
     [h.median_shrink_bytes_ratio != null ? `−${fmt((1 - h.median_shrink_bytes_ratio) * 100, 0)}%` : "—", "median input size reduction by the shrinker"],
@@ -25,10 +25,11 @@ export default function Overview({ data }) {
   return (
     <>
       <div className="headlines">
-        {cards.map(([v, l]) => (
+        {cards.map(([v, l, sub]) => (
           <div className="headline" key={l}>
             <div className="value">{v}</div>
             <div className="label">{l}</div>
+            {sub && <div className="label sub">{sub}</div>}
           </div>
         ))}
       </div>
