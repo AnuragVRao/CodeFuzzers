@@ -7,6 +7,7 @@ beyond those listed here.
 - Dataset/problems/<group>/<name>/  dataset; groups: arrays, graphs, strings.
   Shared headers in Dataset/common/. Problem list comes from Dataset/manifest.json.
   (never modify unless explicitly asked)
+- fuzz_config.json  per-problem settings: {"<problem>": {"max_size": N}}
 - core/             C++17: fuzzer binary (worker threads, shared pool, 5 lock
                     strategies) and the forkserver + coverage runtime
 - tools/            Python 3.12 scripts: build.py, run.py, shrink.py, aggregate.py, llm.py
@@ -22,6 +23,13 @@ beyond those listed here.
 - a generator exiting non-zero means "skip this seed", not a bug
 - comparison: problems with checker_kind "exact-match" use token-wise comparison;
   the 5 "custom" ones run checker.cpp as: checker <input> <output> <answer>
+- Outcome of one test:
+  * generator exits non-zero          → "gen_skip" (not counted)
+  * reference crashes or times out    → "invalid" (not a bug; counted separately)
+  * fast crashes                      → bug, kind "RE"
+  * fast times out                    → bug, kind "TLE"
+  * both exit 0, outputs disagree     → bug, kind "WA"
+- Sizes are always clamped to max_size from fuzz_config.json.
 
 ## Design rules (do not change without being asked)
 - A pool entry is a recipe (variant, size, seed) that reached new coverage, never raw

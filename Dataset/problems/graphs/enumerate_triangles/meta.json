@@ -19,7 +19,7 @@
   },
   "generator": {
     "kind": "native-small",
-    "takes_size_arg": false,
+    "takes_size_arg": true,
     "primary": "small_sparse.cpp",
     "alternates": []
   },

@@ -1,0 +1,92 @@
+{
+  "range_add_range_min": {
+    "max_size": 200
+  },
+  "range_affine_range_sum": {
+    "max_size": 200
+  },
+  "range_set_range_composite": {
+    "max_size": 200
+  },
+  "range_linear_add_range_min": {
+    "max_size": 200
+  },
+  "range_affine_point_get": {
+    "max_size": 200
+  },
+  "range_kth_smallest": {
+    "max_size": 200
+  },
+  "line_add_get_min": {
+    "max_size": 200
+  },
+  "static_range_mode_query": {
+    "max_size": 200
+  },
+  "deque_operate_all_composite": {
+    "max_size": 200
+  },
+  "majority_voting": {
+    "max_size": 200
+  },
+  "rectangle_sum": {
+    "max_size": 200
+  },
+  "static_range_lis_query": {
+    "max_size": 200
+  },
+  "enumerate_palindromes": {
+    "max_size": 200
+  },
+  "longest_common_substring": {
+    "max_size": 200
+  },
+  "prefix_substring_lcs": {
+    "max_size": 200
+  },
+  "wildcard_pattern_matching": {
+    "max_size": 200
+  },
+  "zalgorithm": {
+    "max_size": 200
+  },
+  "suffixarray": {
+    "max_size": 200
+  },
+  "number_of_substrings": {
+    "max_size": 200
+  },
+  "lyndon_factorization": {
+    "max_size": 200
+  },
+  "two_edge_connected_components": {
+    "max_size": 100
+  },
+  "three_edge_connected_components": {
+    "max_size": 100
+  },
+  "incremental_scc": {
+    "max_size": 200
+  },
+  "enumerate_triangles": {
+    "max_size": 200
+  },
+  "connected_components_of_complement_graph": {
+    "max_size": 200
+  },
+  "cartesian_tree": {
+    "max_size": 200
+  },
+  "vertex_add_path_sum": {
+    "max_size": 200
+  },
+  "vertex_add_subtree_sum": {
+    "max_size": 200
+  },
+  "frequency_table_of_tree_distance": {
+    "max_size": 200
+  },
+  "vertex_set_path_composite": {
+    "max_size": 200
+  }
+}
