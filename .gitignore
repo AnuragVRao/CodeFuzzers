@@ -4,3 +4,4 @@ dashboard/node_modules/
 dashboard/dist/
 __pycache__/
 *:Zone.Identifier
+dashboard/public/summary.json

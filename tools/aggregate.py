@@ -13,7 +13,9 @@ Formulas (tps = tests_per_sec; medians and quartiles over the repeats of one con
   ratio          = median_b / median_a (null if either median is censored)
   hunt_time_scaling = geometric mean over problems of time_median (censored medians skipped and counted)
   pinning ratio  = median(pinned tps) / median(unpinned tps);  shrink speedup = median wall(W=1) / median wall(W)
-Usage: python3 tools/aggregate.py
+  headline       = max speedup_abs, pinning ratio, bugs found/total, median(shrunk/original bytes),
+                   median over problems of shrink speedup at 20 workers
+Usage: python3 tools/aggregate.py [--selftest]
 """
 import csv, json, math, sys, warnings
 from collections import defaultdict
@@ -21,6 +23,7 @@ from datetime import datetime, timezone
 import numpy as np
 from scipy.stats import mannwhitneyu
 import problems
+from style import STRATEGY_COLORS
 
 R = problems.ROOT / "results"
 INF = math.inf
@@ -96,7 +99,7 @@ def hunt_values(rows):
 def hunt_section(g, kinds):
     return [dict(problem=p, strategy=s, workers=w, n=len(t), found=sum(map(math.isfinite, t)),
                  censored=sum(not math.isfinite(x) for x in t), kind=kinds.get(p),
-                 **qstats(t, "tests"), **qstats(tm, "time"))
+                 **qstats(t, "tests"), **qstats(tm, "time"), values=[num(x) for x in t])
             for (p, s, w), (t, tm) in sorted(g.items())]
 
 
@@ -151,10 +154,29 @@ def pinning_section(rows):
     return out
 
 
+def snippet(row, path, key, limit=3000):
+    """Embed a text file in row[key] (first `limit` chars); row[key_truncated] = True if cut."""
+    text = path.read_text(errors="replace") if path.exists() else ""
+    row[key] = text[:limit]
+    if len(text) > limit:
+        row[f"{key}_truncated"] = True
+
+
 def shrink_section(gallery, scaling):
-    rows = [dict(problem=g["problem"], tier=g["tier"], size_original=g["original"]["size"], size_shrunk=g["shrunk"]["size"],
-                 bytes_original=g["original"]["bytes"], bytes_shrunk=g["shrunk"]["bytes"],
-                 tests_used=g["tests_used"], wall_s=g["wall_s"]) for g in gallery if "shrunk" in g]
+    groups = {p["name"]: p["group"] for p in problems.load()}
+    rows = []
+    for g in gallery:
+        if "shrunk" not in g:
+            continue
+        row = dict(problem=g["problem"], group=groups[g["problem"]], tier=g["tier"], kind=g["kind"],
+                   category=g["category"], description=g["description"], trigger=g["trigger"],
+                   size_original=g["original"]["size"], size_shrunk=g["shrunk"]["size"],
+                   bytes_original=g["original"]["bytes"], bytes_shrunk=g["shrunk"]["bytes"],
+                   tests_used=g["tests_used"], wall_s=g["wall_s"], mismatch_ok=g["mismatch_ok"])
+        d = R / "bugs" / g["problem"] / "shrunk"
+        for key, f in (("input", "input.txt"), ("ref_out", "ref_out.txt"), ("fast_out", "fast_out.txt")):
+            snippet(row, d / f, key)
+        rows.append(row)
     g = defaultdict(list)
     for r in scaling:
         g[(r["problem"], int(r["workers"]))].append(float(r["wall_s"]))
@@ -165,7 +187,36 @@ def shrink_section(gallery, scaling):
     return dict(gallery=rows, scaling=sc)
 
 
+def headline(scale, pinning, shrink, bugs_total):
+    best = max((r for r in scale if r["speedup_abs"] is not None), key=lambda r: r["speedup_abs"], default=None)
+    g = shrink["gallery"]
+    s20 = [r["speedup"] for r in shrink["scaling"] if r["workers"] == 20 and r["speedup"] is not None]
+    return dict(max_speedup_abs=best and best["speedup_abs"],
+                max_speedup_at=best and {k: best[k] for k in ("strategy", "problem", "K", "F", "workers")},
+                pinning_ratio=pinning.get("ratio"), bugs_found=sum(bool(r["mismatch_ok"]) for r in g),
+                bugs_total=bugs_total,
+                median_shrink_bytes_ratio=num(quant([r["bytes_shrunk"] / r["bytes_original"] for r in g], 50)) if g else None,
+                shrink_speedup_20=num(quant(s20, 50)) if s20 else None)
+
+
+def selftest():
+    """Synthetic hunt data: 30 runs with 10 / 20 censored -> median finite / null + flag."""
+    ok = True
+    for case, censored, want_null in (("A", 10, False), ("B", 20, True)):
+        rows = [dict(problem="p", strategy="s", workers="8", bug_found="0" if i < censored else "1",
+                     bug_tests_before=str(100 + i), bug_time_s=str(1 + i)) for i in range(30)]
+        h = hunt_section(hunt_values(rows), {})[0]
+        good = (h["tests_median"] is None and h.get("tests_median_censored") is True) if want_null \
+            else (h["tests_median"] is not None and "tests_median_censored" not in h)
+        ok &= good
+        print(f"case {case}: 30 runs, {censored} censored -> tests_median={h['tests_median']}, "
+              f"censored_flag={h.get('tests_median_censored', False)}: {'PASS' if good else 'FAIL'}")
+    return 0 if ok else 1
+
+
 def main():
+    if "--selftest" in sys.argv:
+        return selftest()
     runs = read_csv(R / "runs.csv")
     commits = sorted({r.get("git_commit") or "unknown" for r in runs})
     if len(commits) > 1:
@@ -189,17 +240,19 @@ def main():
     counts = defaultdict(int)
     for r in runs:
         counts[r["experiment"]] += 1
+    scale = scale_section(scale_rows, read_csv(R / "pool_bench.csv"))
+    pinning, shrink = pinning_section(pin_rows), shrink_section(gallery, read_csv(R / "shrink_scaling.csv"))
     summary = dict(
         meta=dict(generated_at=datetime.now(timezone.utc).isoformat(timespec="seconds"), commits=commits,
                   runs_per_experiment=dict(sorted(counts.items())),
-                  preset=dict(scale=scale_preset, hunt=hunt_preset, pinning=pin_preset)),
-        scale=scale_section(scale_rows, read_csv(R / "pool_bench.csv")),
-        hunt=hunt, hunt_tests=hunt_tests_section(hv), hunt_time_scaling=hunt_time_scaling(hunt, hard),
-        pinning=pinning_section(pin_rows), shrink=shrink_section(gallery, read_csv(R / "shrink_scaling.csv")))
+                  preset=dict(scale=scale_preset, hunt=hunt_preset, pinning=pin_preset),
+                  strategy_colors=STRATEGY_COLORS, headline=headline(scale, pinning, shrink, len(bugs))),
+        scale=scale, hunt=hunt, hunt_tests=hunt_tests_section(hv), hunt_time_scaling=hunt_time_scaling(hunt, hard),
+        pinning=pinning, shrink=shrink)
     (R / "summary.json").write_text(json.dumps(summary, indent=1) + "\n")
     print(f"wrote results/summary.json: {len(summary['scale'])} scale rows, {len(hunt)} hunt rows, "
           f"{len(summary['hunt_tests'])} hunt tests, presets {summary['meta']['preset']}")
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

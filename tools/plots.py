@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Draws results/charts/*.png (150 dpi) from results/summary.json (only the hunt box plot also reads
-per-run values from results/runs.csv). Every strategy has one fixed colour across all charts.
+per-run values from results/runs.csv). Strategy colours come from tools/style.py.
 Charts: scale speed-up / efficiency / predicted-vs-measured per problem, hunt tests-to-bug boxes
 at 8 workers, hunt time scaling, pinning, shrinker scaling. Usage: python3 tools/plots.py
 """
@@ -10,11 +10,11 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import problems
+from style import STRATEGY_COLORS
 
 R = problems.ROOT / "results"
 OUT = R / "charts"
-COLORS = {"random": "#7f7f7f", "noshare": "#1f77b4", "global": "#d62728", "sharded": "#2ca02c",
-          "rwlock": "#9467bd", "snapshot": "#ff7f0e"}
+COLORS = STRATEGY_COLORS
 ORDER = ["random", "noshare", "global", "sharded", "rwlock", "snapshot"]
 
 
