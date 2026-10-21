@@ -44,7 +44,9 @@ beyond those listed here.
   forks before main() on request. Each worker thread owns its OWN server processes
   and talks to them via pipes. Worker threads themselves NEVER call fork().
 - Coverage: g++ -fsanitize-coverage=trace-pc; runtime hashes (prev_pc, pc) into a
-  64 KiB edge bitmap in shared memory.
+  64 KiB map of saturating edge hit counts in shared memory. Coverage = edge hit-count
+  buckets (AFL-style {1},{2},{3},{4-7},{8-15},{16-31},{32-127},{128+}); the pool bitmap
+  stores one bit per (edge, bucket). "cov_features" = popcount of that bitmap.
 - Timed region = worker loop only. Build, shrink, aggregation, and LLM calls are outside it.
 - Two modes: "scale" (fixed test count, never stops early) and "hunt" (all workers
   stop on the first mismatch).
@@ -53,6 +55,8 @@ beyond those listed here.
   sol_bug.cpp; time-to-bug comparisons use only tier "hard" problems.
 - No-sharing baseline = each worker keeps its OWN private pool and coverage map.
   Sharing methods share one pool and one global coverage map.
+- Three-way comparison: "random" (no pool, no guidance: every recipe random) vs
+  "noshare" (private guidance per worker) vs a sharing strategy (shared guidance).
 
 ## Environment
 WSL2 Ubuntu 24.04, 20 logical cores, g++ 13.3, Python 3.12.

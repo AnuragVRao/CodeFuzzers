@@ -2,7 +2,8 @@
 // WITHOUT coverage flags). Started normally, the binary behaves normally. Started by
 // core/server.hpp (fd 198 open), a constructor turns it into a fork server: per request on fd 198
 // it forks a child that returns from the constructor and runs main(), and reports
-// {wait status, wall-clock µs} on fd 199. trace-pc builds record edges into the map on fd 197.
+// {wait status, wall-clock µs} on fd 199. trace-pc builds count edge hits (saturating at 255)
+// into the map on fd 197; core/fuzzer.cpp turns the counts into hit-count buckets.
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -90,6 +91,7 @@ extern "C" void __sanitizer_cov_trace_pc() {
     uint64_t x = (uint64_t)__builtin_return_address(0);
     x ^= x >> 33, x *= 0xff51afd7ed558ccdULL, x ^= x >> 33;  // mix the PC
     uint32_t cur = x & 0xFFFF;
-    cov_map[cur ^ prev_loc] = 1;
+    uint8_t& m = cov_map[cur ^ prev_loc];  // saturating hit count per edge
+    if (m != 255) ++m;
     prev_loc = cur >> 1;
 }

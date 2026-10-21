@@ -1,4 +1,4 @@
-// Shared fuzzing pool: a global 64 KiB coverage bitmap (bytes 0/1) plus a list of Entry recipes
+// Shared fuzzing pool: a global 64 KiB coverage bitmap (OR of reported maps) plus Entry recipes
 // that reached new coverage. Pool has three virtual operations (pick = read, report = novelty
 // check + merge + append, touch = write) and five locking strategies, built by make_pool():
 // global, sharded, rwlock, snapshot, noshare. Entries are capped at 4096; once full, a random

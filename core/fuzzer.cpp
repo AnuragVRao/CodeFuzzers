@@ -1,8 +1,9 @@
 // Multi-threaded differential fuzzer. W worker threads each own fork servers for gen(/gen_alt),
 // ref, fast (with coverage) and optionally the checker; they share one Pool of recipes (or, for
-// noshare, each has its own). Mode "scale" runs exactly --tests tests in total; "hunt" stops all
-// workers at the first bug (or after --time-limit). Timed region: start barrier -> last worker
-// done. Writes a JSON summary to --out and the first bug's input/recipe to --bug-dir.
+// noshare, each has its own; random has none and never mutates). Coverage = edge hit-count
+// buckets: raw counts become one bit per (edge, bucket) before pool.report(). Mode "scale" runs
+// exactly --tests tests in total; "hunt" stops all workers at the first bug (or --time-limit).
+// Timed region: start barrier -> last worker done. JSON summary to --out, first bug to --bug-dir.
 #include <pthread.h>
 #include <sched.h>
 #include <sys/stat.h>
@@ -43,7 +44,8 @@ struct FirstBug {
 };
 
 static Config cfg;
-static std::vector<std::unique_ptr<Pool>> pools;  // 1 shared, or 1 per worker for noshare
+static std::vector<std::unique_ptr<Pool>> pools;  // 1 shared, 1 per worker (noshare), none (random)
+static std::vector<std::vector<uint8_t>> seen;      // random only: per-worker OR of class maps
 static std::vector<Stats> stats;
 static std::atomic<long long> started{0}, completed{0};
 static std::atomic<bool> stop_flag{false}, failed{false};
@@ -53,6 +55,27 @@ static int arrived = 0;
 static bool go = false;
 static Clock::time_point t0;
 static FirstBug first_bug;
+
+// AFL-style hit-count buckets {1},{2},{3},{4-7},{8-15},{16-31},{32-127},{128+} -> bits 0..7.
+static const struct Buckets {
+    uint8_t lut[256];
+    Buckets() {
+        const int lo[] = {1, 2, 3, 4, 8, 16, 32, 128, 256};
+        lut[0] = 0;
+        for (int b = 0; b < 8; b++)
+            for (int c = lo[b]; c < lo[b + 1]; c++) lut[c] = uint8_t(1 << b);
+    }
+} buckets;
+
+// raw counts -> class map. Zero words (almost all of them) are just cleared.
+static void to_classes(const uint8_t* raw, uint8_t* cls) {
+    for (size_t i = 0; i < pool_impl::MAP_SIZE; i += 8) {
+        uint64_t w;
+        memcpy(&w, raw + i, 8);
+        if (!w) { memset(cls + i, 0, 8); continue; }
+        for (size_t j = i; j < i + 8; j++) cls[j] = buckets.lut[raw[j]];
+    }
+}
 
 static void record_bug(int w, const Entry& r, const std::string& kind, const std::string& input) {
     std::lock_guard<std::mutex> g(bug_m);
@@ -91,7 +114,8 @@ static void worker(int w, std::vector<int> cpus) {
         bar_cv.notify_all();
         bar_cv.wait(lk, [] { return go; });
     }
-    Pool& pool = *pools[cfg.strategy == "noshare" ? w : 0];
+    Pool* pool = cfg.strategy == "random" ? nullptr : pools[cfg.strategy == "noshare" ? w : 0].get();
+    std::vector<uint8_t> cls(pool_impl::MAP_SIZE);
     Stats& st = stats[w];
     std::mt19937_64 rng(cfg.seed * 1000003ULL + w);
     const double factors[] = {0.5, 0.8, 1, 1, 1.25, 2};
@@ -105,7 +129,7 @@ static void worker(int w, std::vector<int> cpus) {
         if (cfg.mode == "scale" && started.fetch_add(1) >= cfg.tests) break;
         if (cfg.mode == "hunt" && std::chrono::duration<double>(Clock::now() - t0).count() > cfg.time_limit) break;
         Entry r{};  // a. recipe
-        if (std::bernoulli_distribution(0.9)(rng) && pool.pick(rng, r)) {
+        if (pool && std::bernoulli_distribution(0.9)(rng) && pool->pick(rng, r)) {
             double s = std::llround(r.size * factors[rng() % 6]);
             r.size = uint16_t(std::min<double>(std::max<double>(s, 1), cfg.max_size));
         } else {
@@ -132,11 +156,16 @@ static void worker(int w, std::vector<int> cpus) {
                     if (dead(cr)) break;
                     kind = cr.kind == Server::Result::OK ? "ok" : "WA";
                 } else kind = same_tokens(out_fast, out_ref) ? "ok" : "WA";
-                if (pool.report(fast.cov_map, r)) st.news++;  // e
-                Entry scratch;                                  // f (must not clobber r)
-                for (int k = 0; k < cfg.extra_ops; k++) {
-                    if (std::bernoulli_distribution(cfg.write_frac)(rng)) pool.touch(rng);
-                    else pool.pick(rng, scratch);
+                to_classes(fast.cov_map, cls.data());
+                if (!pool) {  // random: no guidance, just remember what was covered
+                    for (size_t i = 0; i < cls.size(); i++) seen[w][i] |= cls[i];
+                } else {
+                    if (pool->report(cls.data(), r)) st.news++;  // e
+                    Entry scratch;                                // f (must not clobber r)
+                    for (int k = 0; k < cfg.extra_ops; k++) {
+                        if (std::bernoulli_distribution(cfg.write_frac)(rng)) pool->touch(rng);
+                        else pool->pick(rng, scratch);
+                    }
                 }
             }
         }
@@ -175,13 +204,15 @@ int main(int argc, char** argv) {
     I("--max-size", cfg.max_size), I("--variants", cfg.variants), I("--workers", cfg.workers), I("--tests", cfg.tests);
     I("--seed", cfg.seed), I("--extra-ops", cfg.extra_ops), I("--timeout-ms", cfg.timeout_ms);
     D("--time-limit", cfg.time_limit), D("--write-frac", cfg.write_frac);
-    if (!make_pool(cfg.strategy)) { fprintf(stderr, "unknown strategy %s\n", cfg.strategy.c_str()); return 2; }
+    if (cfg.strategy != "random" && !make_pool(cfg.strategy)) { fprintf(stderr, "unknown strategy %s\n", cfg.strategy.c_str()); return 2; }
     std::vector<int> cpus;
     std::stringstream cs(cfg.cpus);
     for (std::string t; std::getline(cs, t, ',');) if (!t.empty()) cpus.push_back(std::stoi(t));
 
     mkdir(("/dev/shm/cf_" + std::to_string(getpid())).c_str(), 0700);
-    for (int i = 0; i < (cfg.strategy == "noshare" ? cfg.workers : 1); i++) pools.push_back(make_pool(cfg.strategy));
+    if (cfg.strategy == "random") seen.assign(cfg.workers, std::vector<uint8_t>(pool_impl::MAP_SIZE, 0));
+    else
+        for (int i = 0; i < (cfg.strategy == "noshare" ? cfg.workers : 1); i++) pools.push_back(make_pool(cfg.strategy));
     stats.resize(cfg.workers);
     std::vector<std::thread> ts;
     for (int w = 0; w < cfg.workers; w++) ts.emplace_back(worker, w, cpus);
@@ -208,8 +239,10 @@ int main(int argc, char** argv) {
         pool_dump(*p, m, n), entries += n;
         for (size_t i = 0; i < m.size(); i++) all[i] |= m[i];
     }
-    int edges = 0;
-    for (uint8_t b : all) edges += b != 0;
+    for (auto& s : seen)
+        for (size_t i = 0; i < s.size(); i++) all[i] |= s[i];
+    int cov_features = 0;  // distinct (edge, hit-bucket) pairs
+    for (uint8_t b : all) cov_features += __builtin_popcount(b);
 
     FILE* f = fopen(cfg.out.c_str(), "w");
     if (!f) { perror(cfg.out.c_str()); return 1; }
@@ -223,8 +256,8 @@ int main(int argc, char** argv) {
     fprintf(f, "  \"wall_s\": %.4f, \"tests\": %lld, \"tests_per_sec\": %.1f,\n", wall, tot.tests, tot.tests / wall);
     fprintf(f, "  \"outcomes\": {\"ok\": %lld, \"WA\": %lld, \"RE\": %lld, \"TLE\": %lld, \"invalid\": %lld, \"gen_skip\": %lld},\n",
             tot.ok, tot.WA, tot.RE, tot.TLE, tot.invalid, tot.gen_skip);
-    fprintf(f, "  \"new_cov_reports\": %lld, \"edges\": %d, \"pool_entries\": %zu,\n  \"per_worker_tests\": [",
-            tot.news, edges, entries);
+    fprintf(f, "  \"new_cov_reports\": %lld, \"cov_features\": %d, \"pool_entries\": %zu,\n  \"per_worker_tests\": [",
+            tot.news, cov_features, entries);
     for (int w = 0; w < cfg.workers; w++) fprintf(f, "%s%lld", w ? ", " : "", stats[w].tests);
     fprintf(f, "],\n  \"first_bug\": ");
     if (!first_bug.found) fprintf(f, "null");
