@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""Experiment orchestrator: runs build/fuzzer strictly one run at a time.
-Usage: python3 tools/run.py --exp scale|hunt|pinning --preset quick|full [--dry-run]
-Each run writes results/raw/<exp>/<problem>/<strategy>_w<W>_k<K>_f<F>_r<R>[_pinX].json and is
-skipped if that file exists (resumable); quick presets use <exp>-quick so they never count as full runs. Run r uses --seed 1000+r; worker i is pinned to the
-i-th CPU of CPU_ORDER. Scale presets use --recipes random (equal work per test), hunt and pinning
-keep guided recipes. Prints the plan size, an ETA, and one progress line per run.
+"""Experiment orchestrator: runs build/fuzzer strictly one run at a time, in a randomised block design.
+Usage: python3 tools/run.py --exp scale|hunt|pinning|hunt-focus --preset quick|full [--dry-run]
+Repeat r is one block: every configuration of the experiment, shuffled with random.Random(1000 + r);
+blocks run in order (r = 0, 1, ...). One discarded warm-up run (to /tmp) precedes the first measured run.
+Each run writes results/raw/<exp>/<problem>/<strategy>_w<W>_k<K>_f<F>_r<R>[_pinX].json and is skipped if
+that file exists (resumable); quick presets use <exp>-quick. Run r uses --seed 1000+r; worker i is pinned
+to the i-th CPU of CPU_ORDER. Scale = weak scaling (tests = 2500 x workers, --recipes random); hunt,
+hunt-focus and pinning use guided recipes.
 """
-import argparse, json, os, subprocess, sys, time
+import argparse, json, os, random, subprocess, sys, time
 from pathlib import Path
 import problems
 
@@ -25,37 +27,57 @@ def hard_problems():
     return [b["problem"] for b in bugs if b["tier"] == "hard"], {b["problem"]: b for b in bugs}
 
 
+TESTS_PER_WORKER = 2500  # weak scaling: total tests = 2500 x workers
+FOCUS_FILE = RAW / "hunt-focus" / "focus.json"
+
+
+def focus_problems(write=False):
+    """The 3 hard-tier problems with the largest tests_median at 8 workers (median over the three
+    strategies) in the current summary.json. Frozen in FOCUS_FILE once the experiment starts."""
+    if FOCUS_FILE.exists():
+        return json.loads(FOCUS_FILE.read_text())
+    hard, _ = hard_problems()
+    hunt = json.loads((ROOT / "results" / "summary.json").read_text())["hunt"]
+    score = {p: sorted(r["tests_median"] for r in hunt if r["problem"] == p and r["workers"] == 8)[1] for p in hard}
+    focus = sorted(hard, key=lambda p: -score[p])[:3]
+    if write:
+        FOCUS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        FOCUS_FILE.write_text(json.dumps(focus) + "\n")
+    return focus
+
+
 def plan(exp, preset):
-    """List of run dicts: problem, strategy, workers, k, f, repeat, mode, tests, time_limit, pin."""
-    runs = []
+    """List of run dicts (problem, strategy, workers, k, f, repeat, mode, tests, time_limit, pin, recipes),
+    ordered as blocks: for each repeat, all configurations shuffled with random.Random(1000 + repeat)."""
+    full = preset == "full"
     recipes = "random" if exp == "scale" else "guided"  # scale: equal work per test for every strategy
-    def add(problem, strategy, w, k, f, r, mode, tests=0, limit=0, pin=None):
-        runs.append(dict(problem=problem, strategy=strategy, workers=w, k=k, f=f, repeat=r, mode=mode,
-                         tests=tests, time_limit=limit, pin=pin, recipes=recipes))
+    def conf(problem, strategy, w, k=0, f=0, mode="hunt", tests=0, limit=0, pin=None):
+        return dict(problem=problem, strategy=strategy, workers=w, k=k, f=f, mode=mode, tests=tests,
+                    time_limit=limit, pin=pin, recipes=recipes)
     if exp == "scale":
-        full = preset == "full"
         probs = ["range_add_range_min", "zalgorithm", "vertex_add_path_sum"] if full else ["range_add_range_min"]
         workers = [1, 2, 4, 6, 8, 12, 16, 20] if full else [1, 4, 20]
         kfs = [(0, 0), (50, 0.1), (50, 0.5)] if full else [(0, 0), (50, 0.5)]
-        reps, tests = (5, 10000) if full else (1, 5000)
-        for p in probs:
-            for s in STRATS:
-                for w in workers:
-                    for k, f in kfs:
-                        for r in range(reps):
-                            add(p, s, w, k, f, r, "scale", tests=tests)
+        reps = 5 if full else 1
+        confs = [dict(conf(p, s, w, k, f, "scale", tests=TESTS_PER_WORKER * w), tests_per_worker=TESTS_PER_WORKER)
+                 for p in probs for s in STRATS for w in workers for k, f in kfs]
     elif exp == "hunt":
         hard, _ = hard_problems()
-        probs, workers, reps = (hard, [1, 8, 20], 30) if preset == "full" else (hard[:2], [8], 3)
-        for p in probs:
-            for s in ["random", "noshare", "rwlock"]:
-                for w in workers:
-                    for r in range(reps):
-                        add(p, s, w, 0, 0, r, "hunt", limit=20)
+        probs, workers, reps = (hard, [1, 8, 20], 30) if full else (hard[:2], [8], 3)
+        confs = [conf(p, s, w, limit=20) for p in probs for s in ["random", "noshare", "rwlock"] for w in workers]
+    elif exp == "hunt-focus":
+        if not full:
+            raise SystemExit("hunt-focus has only a full preset")
+        reps = 100
+        confs = [conf(p, s, 8, limit=20) for p in focus_problems() for s in ["random", "noshare", "rwlock"]]
     elif exp == "pinning":
-        for pin in (1, 0):
-            for r in range(5):
-                add("range_add_range_min", "global", 8, 0, 0, r, "scale", tests=20000, pin=pin)
+        reps = 5
+        confs = [conf("range_add_range_min", "global", 8, mode="scale", tests=20000, pin=pin) for pin in (1, 0)]
+    runs = []
+    for r in range(reps):
+        block = [dict(c, repeat=r) for c in confs]
+        random.Random(1000 + r).shuffle(block)
+        runs += block
     return runs
 
 
@@ -112,7 +134,7 @@ def git_info():
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--exp", required=True, choices=["scale", "hunt", "pinning"])
+    ap.add_argument("--exp", required=True, choices=["scale", "hunt", "pinning", "hunt-focus"])
     ap.add_argument("--preset", default="quick", choices=["quick", "full"])
     ap.add_argument("--dry-run", action="store_true", help="print the plan and ETA only")
     a = ap.parse_args()
@@ -120,6 +142,8 @@ def main():
     cfg = problem_config()
     commit, dirty = git_info()
     _, bugs = hard_problems()
+    if a.exp == "hunt-focus":
+        print("hunt-focus problems:", focus_problems(write=not a.dry_run))
     runs = plan(a.exp, a.preset)
     exp_dir = a.exp + ("-quick" if a.preset == "quick" else "")
     todo = [r for r in runs if not out_path(exp_dir, r).exists()]
@@ -132,7 +156,19 @@ def main():
             groups.setdefault(r["problem"], []).append(r)
         for p, rs in groups.items():
             print(f"  {p:42} {len(rs):5} runs  ~{fmt(sum(predict(r, bugs) for r in rs))}")
+        print("first 12 planned runs:")
+        for r in todo[:12]:
+            print(f"  r{r['repeat']} {r['problem']:28} {r['strategy']:8} W={r['workers']:<2} K={r['k']:<2} F={r['f']:<3} "
+                  f"tests={r['tests'] or '-':<6} pin={'-' if r['pin'] is None else r['pin']}")
         return 0
+
+    if todo:  # warm-up: one discarded run so the first measured run does not pay cold caches
+        warm = Path("/tmp/cf_warmup.json")
+        cmd = command(exp_dir, todo[0], cfg, warm)
+        cmd[cmd.index("--bug-dir") + 1] = "/tmp/cf_warmup_bug"
+        subprocess.run(cmd, capture_output=True)
+        warm.unlink(missing_ok=True)
+        print("warm-up run done (discarded)")
 
     predicted_done = actual_done = 0.0
     for i, run in enumerate(todo, 1):
@@ -148,6 +184,8 @@ def main():
             continue
         d = json.loads(tmp.read_text())
         d["git_commit"], d["git_dirty"] = commit, dirty  # which code produced this result
+        if "tests_per_worker" in run:
+            d["tests_per_worker"] = run["tests_per_worker"]
         tmp.write_text(json.dumps(d, indent=2) + "\n")
         os.replace(tmp, out)  # only complete results count as done
         predicted_done += predict(run, bugs)

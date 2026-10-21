@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Aggregates all results into results/summary.json. Run tools/flatten.py first.
 Inputs: results/runs.csv, results/pool_bench.csv, results/shrink_scaling.csv, results/bugs/gallery.json,
-Dataset/bugs.json. Full-preset experiments are used; if one has no rows, its *-quick twin is used.
+Dataset/bugs.json. Scale and pinning use only the new randomised "scale"/"pinning" experiments (v1 runs
+appear only in order_effect); hunt falls back to hunt-quick if the full hunt has no rows.
 Formulas (tps = tests_per_sec; medians and quartiles over the repeats of one configuration):
   speedup_abs    = tps_median / tps_median(noshare, same problem/K/F, workers=1)
   speedup_rel    = tps_median / tps_median(same strategy/problem/K/F, workers=1)
@@ -9,15 +10,21 @@ Formulas (tps = tests_per_sec; medians and quartiles over the repeats of one con
   vs_noshare     = tps_median / tps_median(noshare, same problem/K/F/workers)
   predicted_tps  = min(noshare tps_median at this W, pool_bench tests_per_sec at this strategy/K/F/threads)
   hunt censoring = a run without a bug counts as +inf tests/time; a quantile touching +inf -> null + flag
-  hunt_tests     = two-sided Mann-Whitney U on tests-to-bug (censored = +inf); p_holm = Holm over all rows
+  hunt_tests     = two-sided Mann-Whitney U on tests-to-bug (censored = +inf); p_holm = Holm within a family:
+                   "exploratory" (hunt) and "confirmatory" (hunt-focus)
   ratio          = median_b / median_a (null if either median is censored)
+  ratio CI       = 95% percentile bootstrap of median_b / median_a (2000 resamples of each group, fixed seed)
+  power          = smallest ratio r (1.1..4.0 step 0.1) that a two-sided Mann-Whitney U at alpha 0.05 detects
+                   with >= 80% power, simulated with geometric tests-to-bug (baseline median = range_add_range_min
+                   noshare @ 8 workers, other group median x r), 500 simulations per r
+  order_effect   = vs_noshare per strategy for range_add_range_min, K=0, 20 workers: v1 (blocked order) vs new
   hunt_time_scaling = geometric mean over problems of time_median (censored medians skipped and counted)
   pinning ratio  = median(pinned tps) / median(unpinned tps);  shrink speedup = median wall(W=1) / median wall(W)
   mean_size      = median over repeats of the run's average generator size (null for older runs without it)
   headline       = speedup_20_<s>_k0 = median over scale problems of speedup_abs (s, K=0, F=0, 20 workers)
                    for s = rwlock and noshare; pinning ratio, bugs found/total, median(shrunk/original bytes),
                    median over problems of shrink speedup at 20 workers
-Usage: python3 tools/aggregate.py [--selftest]
+Usage: python3 tools/aggregate.py [--selftest | --power]
 """
 import csv, json, math, sys, warnings
 from collections import defaultdict
@@ -117,7 +124,19 @@ def holm(ps):
     return adj
 
 
-def hunt_tests_section(g):
+def ratio_ci(ta, tb, seed, n_boot=2000):
+    """95% percentile bootstrap CI of median(b) / median(a); +inf (censored) values stay +inf."""
+    rng = np.random.default_rng(seed)
+    a, b = np.array(ta, dtype=float), np.array(tb, dtype=float)
+    ma = np.median(a[rng.integers(0, len(a), (n_boot, len(a)))], axis=1)
+    mb = np.median(b[rng.integers(0, len(b), (n_boot, len(b)))], axis=1)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        r = mb / ma  # inf/inf -> nan (undefined), dropped by nanpercentile
+    lo, hi = np.nanpercentile(r, [2.5, 97.5]) if np.isfinite(r).any() or np.isinf(r).any() else (math.nan, math.nan)
+    return num(lo), num(hi)
+
+
+def hunt_tests_section(g, family, seed0=0):
     out = []
     for p, w in sorted({(p, w) for p, _, w in g}):
         for comparison, a, b in (("guidance", "random", "noshare"), ("sharing", "noshare", "rwlock")):
@@ -128,11 +147,10 @@ def hunt_tests_section(g):
                 warnings.simplefilter("ignore")
                 pr = float(mannwhitneyu(ta, tb, alternative="two-sided").pvalue)
             ma, mb = quant(ta, 50), quant(tb, 50)
-            out.append(dict(problem=p, workers=w, comparison=comparison, a=a, b=b, median_a=num(ma), median_b=num(mb),
-                            ratio=num(mb / ma) if math.isfinite(ma) and math.isfinite(mb) and ma > 0 else None,
-                            p_raw=num(pr if math.isfinite(pr) else 1.0)))
-    for row, ph in zip(out, holm([r["p_raw"] for r in out])):
-        row["p_holm"] = num(ph)
+            lo, hi = ratio_ci(ta, tb, seed0 + len(out))
+            out.append(dict(family=family, problem=p, workers=w, comparison=comparison, a=a, b=b, median_a=num(ma),
+                            median_b=num(mb), ratio=num(mb / ma) if math.isfinite(ma) and math.isfinite(mb) and ma > 0 else None,
+                            ratio_ci_lo=lo, ratio_ci_hi=hi, p_raw=num(pr if math.isfinite(pr) else 1.0)))
     return out
 
 
@@ -206,6 +224,35 @@ def headline(scale, pinning, shrink, bugs_total):
                 shrink_speedup_20=num(quant(s20, 50)) if s20 else None)
 
 
+def power_section(base_median, ns=(30, 100), sims=500, seed=12345):
+    """Minimum detectable median ratio for Mann-Whitney U (two-sided, alpha 0.05, 80% power) per n."""
+    def p_for(median):  # geometric distribution (support 1, 2, ...) whose median is ~ `median`
+        return 1 - 2 ** (-1 / median)
+    mde = {}
+    for n in ns:
+        rng = np.random.default_rng(seed + n)
+        mde[str(n)] = None
+        for r in np.arange(1.1, 4.0001, 0.1):
+            a = rng.geometric(p_for(base_median), (sims, n))
+            b = rng.geometric(p_for(base_median * r), (sims, n))
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                power = float(np.mean(mannwhitneyu(a, b, alternative="two-sided", axis=1).pvalue < 0.05))
+            if power >= 0.8:
+                mde[str(n)] = round(float(r), 1)
+                break
+    return dict(mde_ratio=mde, base_median=base_median, alpha=0.05, target_power=0.8, simulations=sims,
+                baseline="range_add_range_min noshare @ 8 workers (hunt)")
+
+
+def order_effect_section(v1_rows, new_rows):
+    """vs_noshare per strategy for range_add_range_min, K=0, 20 workers: v1 (blocked order) vs new (randomised)."""
+    pick = lambda rows: {r["strategy"]: r["vs_noshare"] for r in scale_section(rows, [])
+                         if (r["problem"], r["K"], r["F"], r["workers"]) == ("range_add_range_min", 0, 0.0, 20)}
+    v1, new = pick(v1_rows), pick(new_rows)
+    return [dict(strategy=s, vs_noshare_v1=v1.get(s), vs_noshare_new=new.get(s)) for s in sorted(set(v1) | set(new))]
+
+
 def selftest():
     """Synthetic hunt data: 30 runs with 10 / 20 censored -> median finite / null + flag."""
     ok = True
@@ -224,6 +271,11 @@ def selftest():
 def main():
     if "--selftest" in sys.argv:
         return selftest()
+    if "--power" in sys.argv:
+        base = next(r["tests_median"] for r in json.loads((R / "summary.json").read_text())["hunt"]
+                    if (r["problem"], r["strategy"], r["workers"]) == ("range_add_range_min", "noshare", 8))
+        print(json.dumps(power_section(base), indent=1))
+        return 0
     runs = read_csv(R / "runs.csv")
     commits = sorted({r.get("git_commit") or "unknown" for r in runs})
     if len(commits) > 1:
@@ -236,14 +288,21 @@ def main():
     bugs = json.loads((problems.DATASET / "bugs.json").read_text())
     kinds = {b["problem"]: b["kind"] for b in bugs}
     hard = {b["problem"] for b in bugs if b["tier"] == "hard"}
-    scale_rows, scale_preset = section(runs, "scale")
+    only = lambda exp: [r for r in runs if r["experiment"] == exp]
+    scale_rows, pin_rows = only("scale"), only("pinning")  # randomised design only; v1 kept out
+    scale_preset, pin_preset = ("full" if scale_rows else "none"), ("full" if pin_rows else "none")
     hunt_rows_raw, hunt_preset = section(runs, "hunt")
-    pin_rows, pin_preset = section(runs, "pinning")
     gallery_path = R / "bugs" / "gallery.json"
     gallery = json.loads(gallery_path.read_text()) if gallery_path.exists() else []
 
     hv = hunt_values(hunt_rows_raw)
     hunt = hunt_section(hv, kinds)
+    tests = hunt_tests_section(hv, "exploratory") + hunt_tests_section(hunt_values(only("hunt-focus")), "confirmatory", 10000)
+    for fam in ("exploratory", "confirmatory"):
+        rows = [t for t in tests if t["family"] == fam]
+        for row, ph in zip(rows, holm([t["p_raw"] for t in rows])):
+            row["p_holm"] = num(ph)
+    base = next((r["tests_median"] for r in hunt if (r["problem"], r["strategy"], r["workers"]) == ("range_add_range_min", "noshare", 8)), None)
     counts = defaultdict(int)
     for r in runs:
         counts[r["experiment"]] += 1
@@ -252,10 +311,12 @@ def main():
     summary = dict(
         meta=dict(generated_at=datetime.now(timezone.utc).isoformat(timespec="seconds"), commits=commits,
                   runs_per_experiment=dict(sorted(counts.items())),
-                  preset=dict(scale=scale_preset, hunt=hunt_preset, pinning=pin_preset),
+                  preset={k: v for k, v in (("scale", scale_preset), ("hunt", hunt_preset), ("pinning", pin_preset))
+                          if v != "none"},  # sections without data are left out (footnote would mislabel them)
                   strategy_colors=STRATEGY_COLORS, headline=headline(scale, pinning, shrink, len(bugs))),
-        scale=scale, hunt=hunt, hunt_tests=hunt_tests_section(hv), hunt_time_scaling=hunt_time_scaling(hunt, hard),
-        pinning=pinning, shrink=shrink)
+        scale=scale, order_effect=order_effect_section(only("scale-full-v1"), scale_rows),
+        hunt=hunt, hunt_tests=tests, hunt_time_scaling=hunt_time_scaling(hunt, hard),
+        power=power_section(base) if base else None, pinning=pinning, shrink=shrink)
     (R / "summary.json").write_text(json.dumps(summary, indent=1) + "\n")
     print(f"wrote results/summary.json: {len(summary['scale'])} scale rows, {len(hunt)} hunt rows, "
           f"{len(summary['hunt_tests'])} hunt tests, presets {summary['meta']['preset']}")

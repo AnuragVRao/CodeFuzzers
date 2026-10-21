@@ -59,6 +59,13 @@ beyond those listed here.
   "noshare" (private guidance per worker) vs a sharing strategy (shared guidance).
 - Scale experiments use --recipes random so every strategy does identical work per test;
   only synchronisation differs. Hunt experiments use guided recipes.
+- Randomised block design (tools/run.py): repeat r is one block containing every configuration of
+  the experiment, shuffled with random.Random(1000 + r); a discarded warm-up run starts each session.
+  Machine drift therefore cannot line up with one strategy.
+- Scale = weak scaling: tests = 2500 x workers; speed-up = throughput ratio (tests/s vs noshare @ 1).
+- "hunt" is exploratory (30 repeats, all hard-tier problems); "hunt-focus" (100 repeats, 8 workers,
+  the 3 hard-tier problems with the most tests-to-bug, frozen in results/raw/hunt-focus/focus.json)
+  is the confirmatory test with its own Holm family.
 
 ## Environment
 WSL2 Ubuntu 24.04, 20 logical cores, g++ 13.3, Python 3.12.

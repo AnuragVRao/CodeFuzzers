@@ -36,7 +36,9 @@ export default function Hunt({ data }) {
   const hi = Math.max(...plotted, 1) * 2;
   const top = hi / 1.4; // where censored runs are drawn
 
-  const tests = (data.hunt_tests || []).filter((t) => t.problem === problem);
+  const fam = (t) => (t.family === "confirmatory" ? 0 : 1);
+  const tests = (data.hunt_tests || []).filter((t) => t.problem === problem).sort((a, b) => fam(a) - fam(b));
+  const mde = data.power?.mde_ratio;
   const scaling = data.hunt_time_scaling || [];
   const sw = uniq(scaling.map((r) => r.workers)).sort((a, b) => a - b);
   const tsPoints = sw.map((x) => Object.fromEntries([["workers", x],
@@ -82,14 +84,21 @@ export default function Hunt({ data }) {
         <p className="explain">Dots are individual runs; the thick bar is the median and the vertical line the interquartile range.</p>
       </Card>
       <Card title="Statistical comparisons (Mann–Whitney U, Holm-corrected)">
+        {mde && (
+          <p className="explain">
+            With 30 runs per group we can detect a ≥ {fmt(mde["30"], 1)}× difference (80% power); with 100 runs, ≥ {fmt(mde["100"], 1)}×.
+          </p>
+        )}
         {tests.length ? (
           <table>
-            <thead><tr><th>workers</th><th>comparison</th><th>median a</th><th>median b</th><th>ratio b/a</th><th>p (Holm)</th><th /></tr></thead>
+            <thead><tr><th>family</th><th>workers</th><th>comparison</th><th>median a</th><th>median b</th><th>ratio b/a</th>
+              <th>95% CI</th><th>p (Holm)</th><th /></tr></thead>
             <tbody>
               {tests.map((t) => (
-                <tr key={`${t.workers}${t.comparison}`}>
-                  <td>{t.workers}</td><td>{t.comparison}: {t.a} vs {t.b}</td><td>{fmt(t.median_a, 0)}</td>
-                  <td>{fmt(t.median_b, 0)}</td><td>{fmt(t.ratio, 2)}</td><td>{fmt(t.p_holm, 3)}</td>
+                <tr key={`${t.family}${t.workers}${t.comparison}`}>
+                  <td>{t.family}</td><td>{t.workers}</td><td>{t.comparison}: {t.a} vs {t.b}</td><td>{fmt(t.median_a, 0)}</td>
+                  <td>{fmt(t.median_b, 0)}</td><td>{fmt(t.ratio, 2)}</td>
+                  <td>[{fmt(t.ratio_ci_lo, 2)} – {fmt(t.ratio_ci_hi, 2)}]</td><td>{fmt(t.p_holm, 3)}</td>
                   <td>{t.p_holm < 0.05 ? <span className="badge yes">significant</span> : <span className="badge no">not significant</span>}</td>
                 </tr>
               ))}

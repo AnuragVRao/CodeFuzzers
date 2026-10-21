@@ -7,7 +7,7 @@ import { CartesianGrid, ErrorBar, Legend, Line, LineChart, ResponsiveContainer, 
 import { Card, NoData, ORDER, Select, colorOf, fmt, uniq } from "../ui.jsx";
 
 const METRICS = {
-  speedup: ["absolute speed-up (× vs noshare @ 1 worker)", (r) => r.tps_median / r.speedup_abs],
+  speedup: ["speed-up (throughput ratio, weak scaling)", (r) => r.tps_median / r.speedup_abs],
   efficiency: ["efficiency (speed-up / workers)", (r) => (r.tps_median / r.speedup_abs) * r.workers],
   throughput: ["throughput (tests / s)", () => 1],
   vs_noshare: ["throughput / noshare throughput", (r) => r.tps_median / r.vs_noshare],
