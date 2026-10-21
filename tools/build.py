@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Builds everything the fuzzer needs into build/, in parallel, skipping up-to-date targets.
 build/fs_runtime.o (no coverage) is linked into every problem binary. Per problem in build/<name>/:
-  lightweight (-O2): gen, gen_alt (if variant exists), ref, checker;  path-tracking (-O2 trace-pc,
+  lightweight (-O2): gen, gen_alt (if variant exists), ref, checker, verifier (plain, exit 0 = valid
+  input on stdin);  path-tracking (-O2 trace-pc,
   -no-pie): fast_sol, fast_bug.  Also smoke, pool_bench(_tsan), fuzzer(_tsan), tests/*.
 Rebuilds when a target is older than its listed deps; --force rebuilds everything.
 """
@@ -34,10 +35,11 @@ def problem_targets(p):
     d, out = p["dir"], BUILD / p["name"]
     fl = problems.flags(d)
     srcs = {"gen": d / "gen/generator.cpp", "ref": d / "brute.cpp", "checker": d / "checker.cpp"}
+    jobs = [(out / "verifier", ["g++", *fl, "-o", str(out / "verifier"), str(d / "verifier.cpp")], [d / "verifier.cpp"])]
     if "generator_alt_1" in p["variants"]:
         srcs["gen_alt"] = d / "gen/generator_alt_1.cpp"
-    jobs = [(out / name, ["g++", *fl, "-o", str(out / name), str(src), str(RUNTIME)], [src, RUNTIME])
-            for name, src in srcs.items()]
+    jobs += [(out / name, ["g++", *fl, "-o", str(out / name), str(src), str(RUNTIME)], [src, RUNTIME])
+             for name, src in srcs.items()]
     for name, src in (("fast_sol", d / "sol.cpp"), ("fast_bug", d / "sol_bug.cpp")):
         jobs.append((out / name, ["g++", *fl, *COV, "-o", str(out / name), str(src), str(RUNTIME)], [src, RUNTIME]))
     return jobs

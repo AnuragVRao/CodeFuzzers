@@ -94,6 +94,20 @@ def command(exp, run, cfg, tmp_out):
             "--out", str(tmp_out), "--bug-dir", str(bug_dir)]
 
 
+def problem_config():
+    """name -> checker/max_size/variants, from the manifest and fuzz_config.json."""
+    fuzz_cfg = json.loads((ROOT / "fuzz_config.json").read_text())
+    return {p["name"]: dict(checker="custom" if p["checker_kind"] == "custom" else "exact",
+                            max_size=fuzz_cfg[p["name"]]["max_size"], variants=len(p["variants"]))
+            for p in problems.load()}
+
+
+def git_info():
+    head = subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True, cwd=ROOT)
+    dirty = subprocess.run(["git", "status", "--porcelain"], capture_output=True, text=True, cwd=ROOT)
+    return head.stdout.strip(), bool(dirty.stdout.strip())
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--exp", required=True, choices=["scale", "hunt", "pinning"])
@@ -101,10 +115,8 @@ def main():
     ap.add_argument("--dry-run", action="store_true", help="print the plan and ETA only")
     a = ap.parse_args()
 
-    fuzz_cfg = json.loads((ROOT / "fuzz_config.json").read_text())
-    cfg = {p["name"]: dict(checker="custom" if p["checker_kind"] == "custom" else "exact",
-                           max_size=fuzz_cfg[p["name"]]["max_size"], variants=len(p["variants"]))
-           for p in problems.load()}
+    cfg = problem_config()
+    commit, dirty = git_info()
     _, bugs = hard_problems()
     runs = plan(a.exp, a.preset)
     exp_dir = a.exp + ("-quick" if a.preset == "quick" else "")
@@ -132,11 +144,13 @@ def main():
             print(f"[{i}/{len(todo)}] FAILED {out.relative_to(ROOT)}: {r.stderr.strip()[:200]}")
             tmp.unlink(missing_ok=True)
             continue
+        d = json.loads(tmp.read_text())
+        d["git_commit"], d["git_dirty"] = commit, dirty  # which code produced this result
+        tmp.write_text(json.dumps(d, indent=2) + "\n")
         os.replace(tmp, out)  # only complete results count as done
         predicted_done += predict(run, bugs)
         actual_done += dt
         remaining = sum(predict(x, bugs) for x in todo[i:]) * actual_done / predicted_done
-        d = json.loads(out.read_text())
         bug = d["first_bug"]
         extra = f"bug {bug['kind']} after {bug['tests_before']} tests" if bug else f"{d['tests_per_sec']:.0f} tests/s"
         print(f"[{i}/{len(todo)}] {run['problem']} {out.stem}: {dt:.1f}s, {extra}; ETA {fmt(remaining)}", flush=True)

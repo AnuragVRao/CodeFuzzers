@@ -5,69 +5,20 @@ Usage: python3 tools/sanity.py [--seeds 50] [--size S | --sizes 5,20,max] [--fas
 S is an integer or "max" (max_size from fuzz_config.json); sizes are clamped to max_size.
 Exit code 1 if any WA/RE/TLE.
 """
-import argparse, json, os, shutil, subprocess, sys, time
+import argparse, json, os, sys, time
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
 import problems
 
-BUILD = problems.ROOT / "build" / "plain"
-TMP = Path("/dev/shm/cf_sanity")
-TIMEOUT = 5
 CONFIG = json.loads((problems.ROOT / "fuzz_config.json").read_text())
-BUGS = ("WA", "RE", "TLE")
+BUGS = problems.BUGS
 
 
-def build(p, fast):
-    out = BUILD / p["name"]
-    fl = problems.flags(p["dir"])
-    bins = {v: problems.compile(p["dir"] / "gen" / f"{v}.cpp", out / v, fl) for v in p["variants"]}
-    for name in (fast, "brute", "checker"):
-        bins[name] = problems.compile(p["dir"] / f"{name}.cpp", out / name, fl)
-    bins["fast"] = bins[fast]
-    return bins
-
-
-def run(cmd, inp, out):
-    """Run cmd with stdin/stdout files. Returns (returncode or None on timeout, ms)."""
-    t0 = time.perf_counter()
-    with open(inp, "rb") as fi, open(out, "wb") as fo:
-        try:
-            rc = subprocess.run(cmd, stdin=fi, stdout=fo, stderr=subprocess.DEVNULL, timeout=TIMEOUT).returncode
-        except subprocess.TimeoutExpired:
-            rc = None
-    return rc, (time.perf_counter() - t0) * 1000
-
-
-def same(p, bins, inp, out, ans):
-    if p["checker_kind"] == "custom":
-        r = subprocess.run([str(bins["checker"]), str(inp), str(out), str(ans)], capture_output=True)
-        return r.returncode == 0
-    return out.read_bytes().split() == ans.read_bytes().split()
-
-
-def test(p, bins, size, seed):
-    """One test -> (outcome, fast_ms, brute_ms); outcome per CLAUDE.md 'Outcome of one test'."""
-    base = TMP / f"{p['name']}.{size}.{seed}"
-    inp, out, ans = (base.with_suffix(base.suffix + x) for x in (".in", ".out", ".ans"))
-    try:
-        gen_cmd = [str(bins["generator"]), str(seed)] + ([str(size)] if size is not None else [])
-        with open(inp, "wb") as f:
-            try:
-                g = subprocess.run(gen_cmd, stdout=f, stderr=subprocess.DEVNULL, timeout=TIMEOUT).returncode
-            except subprocess.TimeoutExpired:
-                g = None
-        if g != 0:
-            return "gen_skip", 0, 0
-        rb, mb = run([str(bins["brute"])], inp, ans)
-        if rb != 0:
-            return "invalid", 0, mb
-        rf, mf = run([str(bins["fast"])], inp, out)
-        kind = "TLE" if rf is None else "RE" if rf != 0 else "ok" if same(p, bins, inp, out, ans) else "WA"
-        return kind, mf, mb
-    finally:
-        for f in (inp, out, ans):
-            f.unlink(missing_ok=True)
+def test(p, size, seed, fast):
+    """One test -> (outcome, fast_ms, brute_ms), via the shared problems.run_test (variant 0)."""
+    times = {}
+    kind, _ = problems.run_test(p, 0, size, seed, fast, times)
+    return kind, times.get("fast_ms", 0), times.get("brute_ms", 0)
 
 
 def resolve(size, name):
@@ -93,19 +44,16 @@ def main():
 
     probs = [p for p in problems.load() if a.only in (None, p["name"])]
     assert probs, f"unknown problem {a.only}"
-    with ThreadPoolExecutor() as ex:
-        bins = list(ex.map(lambda p: build(p, a.fast), probs))
-    shutil.rmtree(TMP, ignore_errors=True)
-    TMP.mkdir(parents=True)
-    jobs = [(p, b, s, seed) for p, b in zip(probs, bins) for s in sizes for seed in range(1, a.seeds + 1)]
+    with ThreadPoolExecutor() as ex:  # compile up front so compile time is not in the timed part
+        list(ex.map(lambda p: problems.plain_bins(p, a.fast), probs))
+    jobs = [(p, s, seed) for p in probs for s in sizes for seed in range(1, a.seeds + 1)]
     t0 = time.time()
     with ThreadPoolExecutor(os.cpu_count()) as ex:
-        results = list(ex.map(lambda j: test(j[0], j[1], resolve(j[2], j[0]["name"]), j[3]), jobs))
-    shutil.rmtree(TMP, ignore_errors=True)
+        results = list(ex.map(lambda j: test(j[0], resolve(j[1], j[0]["name"]), j[2], a.fast), jobs))
 
     stats = {(p["name"], s): Counter() for p in probs for s in sizes}
     ms = {p["name"]: [0.0, 0.0] for p in probs}
-    for (p, _, s, _), (kind, mf, mb) in zip(jobs, results):
+    for (p, s, _), (kind, mf, mb) in zip(jobs, results):
         stats[p["name"], s][kind] += 1
         ms[p["name"]] = [max(ms[p["name"]][0], mf), max(ms[p["name"]][1], mb)]
 
