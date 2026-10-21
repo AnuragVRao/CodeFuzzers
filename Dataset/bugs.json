@@ -5,7 +5,13 @@
     "category": "init",
     "description": "INF (identity of min) is 2^32, which is smaller than values reachable after several range adds.",
     "line": 158,
-    "trigger": "Many range-add updates pushing every element of a queried range above 2^32."
+    "trigger": "Many range-add updates pushing every element of a queried range above 2^32.",
+    "rate": {
+      "5": 0.0,
+      "20": 0.0,
+      "max": 8.4
+    },
+    "tier": "hard"
   },
   {
     "problem": "range_affine_range_sum",
@@ -13,7 +19,13 @@
     "category": "modulo",
     "description": "Applying an affine map to a node sums two reduced terms without a final % MOD, leaving values in [MOD, 2*MOD).",
     "line": 120,
-    "trigger": "A query whose range is exactly one segment-tree node that was just updated and whose new sum lands in [MOD, 2*MOD)."
+    "trigger": "A query whose range is exactly one segment-tree node that was just updated and whose new sum lands in [MOD, 2*MOD).",
+    "rate": {
+      "5": 0.6,
+      "20": 1.0,
+      "max": 0.6
+    },
+    "tier": "hard"
   },
   {
     "problem": "range_set_range_composite",
@@ -21,7 +33,13 @@
     "category": "narrowing",
     "description": "Composition stores f.b + (f.a*x.b % MOD) into an int without the outer % MOD, so repeated composition overflows int.",
     "line": 16,
-    "trigger": "Deep composition chains (larger n, many assigns) where unreduced constants exceed 2^31."
+    "trigger": "Deep composition chains (larger n, many assigns) where unreduced constants exceed 2^31.",
+    "rate": {
+      "5": 1.4,
+      "20": 39.4,
+      "max": 96.8
+    },
+    "tier": "easy"
   },
   {
     "problem": "range_linear_add_range_min",
@@ -29,7 +47,13 @@
     "category": "init",
     "description": "Query starts the running minimum at 1e9 (the max |a_i|), forgetting that linear adds can push all values higher.",
     "line": 116,
-    "trigger": "Many positive linear adds so that every value in a queried range exceeds 1e9."
+    "trigger": "Many positive linear adds so that every value in a queried range exceeds 1e9.",
+    "rate": {
+      "5": 0.0,
+      "20": 0.2,
+      "max": 0.6
+    },
+    "tier": "hard"
   },
   {
     "problem": "range_affine_point_get",
@@ -37,7 +61,13 @@
     "category": "edge-case",
     "description": "Special case for n == 1 prints the initial value and ignores range-affine updates.",
     "line": 134,
-    "trigger": "n = 1 with at least one update before a point query."
+    "trigger": "n = 1 with at least one update before a point query.",
+    "rate": {
+      "5": 10.8,
+      "20": 5.8,
+      "max": 0.4
+    },
+    "tier": "hard"
   },
   {
     "problem": "range_kth_smallest",
@@ -45,7 +75,13 @@
     "category": "narrowing",
     "description": "Prefix popcounts of the bit vector use 32-bit popcount on 64-bit words, dropping the high half of each word.",
     "line": 46,
-    "trigger": "n > 64 so that more than one word exists and the upper 32 bits of an earlier word contain ones."
+    "trigger": "n > 64 so that more than one word exists and the upper 32 bits of an earlier word contain ones.",
+    "rate": {
+      "5": 0.0,
+      "20": 0.0,
+      "max": 70.0
+    },
+    "tier": "easy"
   },
   {
     "problem": "line_add_get_min",
@@ -53,15 +89,27 @@
     "category": "init",
     "description": "Li Chao tree is filled with the dummy line y = 5e17, which is not larger than every real line value (up to 2e18).",
     "line": 26,
-    "trigger": "Few lines, so the true minimum at a query point is above 5e17."
+    "trigger": "Few lines, so the true minimum at a query point is above 5e17.",
+    "rate": {
+      "5": 3.6,
+      "20": 1.2,
+      "max": 0.0
+    },
+    "tier": "hard"
   },
   {
     "problem": "static_range_mode_query",
-    "kind": "structural",
+    "kind": "large-size",
     "category": "boundary",
     "description": "Short queries inside block 0 are not answered naively and go through the Mo path, which assumes R >= block end.",
     "line": 101,
-    "trigger": "Several short queries (L and R in the first block)."
+    "trigger": "Several short queries (L and R in the first block).",
+    "rate": {
+      "5": 3.8,
+      "20": 11.4,
+      "max": 24.0
+    },
+    "tier": "easy"
   },
   {
     "problem": "deque_operate_all_composite",
@@ -69,7 +117,13 @@
     "category": "boundary",
     "description": "When the back stack is rebuilt from the front stack, the moved half is not reversed, so composition order is wrong.",
     "line": 66,
-    "trigger": "pop_back on an empty back stack while the front stack holds 2+ elements that get moved."
+    "trigger": "pop_back on an empty back stack while the front stack holds 2+ elements that get moved.",
+    "rate": {
+      "5": 0.2,
+      "20": 5.2,
+      "max": 14.8
+    },
+    "tier": "hard"
   },
   {
     "problem": "majority_voting",
@@ -77,7 +131,13 @@
     "category": "off-by-one",
     "description": "Fenwick add stops at i < n and never updates the last node.",
     "line": 79,
-    "trigger": "A value with more than 64 occurrence slots (several blocks) whose full-prefix count is queried."
+    "trigger": "A value with more than 64 occurrence slots (several blocks) whose full-prefix count is queried.",
+    "rate": {
+      "5": 0.0,
+      "20": 0.0,
+      "max": 0.6
+    },
+    "tier": "hard"
   },
   {
     "problem": "rectangle_sum",
@@ -85,7 +145,13 @@
     "category": "tie-break",
     "description": "At equal x, points are processed before query corners, so points on a rectangle's left/right edge are counted wrongly.",
     "line": 67,
-    "trigger": "A point whose x equals a query's l or r with y in [d, u)."
+    "trigger": "A point whose x equals a query's l or r with y in [d, u).",
+    "rate": {
+      "5": 1.8,
+      "20": 6.4,
+      "max": 85.2
+    },
+    "tier": "easy"
   },
   {
     "problem": "static_range_lis_query",
@@ -93,15 +159,27 @@
     "category": "off-by-one",
     "description": "Missing seaweeds are mapped to n + 1 instead of n, which needs one more bit than the wavelet matrix has when n = 2^k - 1.",
     "line": 366,
-    "trigger": "n of the form 2^k - 1 (1, 3, 7, ...)."
+    "trigger": "n of the form 2^k - 1 (1, 3, 7, ...).",
+    "rate": {
+      "5": 30.6,
+      "20": 19.2,
+      "max": 3.0
+    },
+    "tier": "easy"
   },
   {
     "problem": "enumerate_palindromes",
-    "kind": "structural",
+    "kind": "large-size",
     "category": "boundary",
     "description": "Manacher mirror step uses k+res[i-k] < j-1, so a mirrored palindrome ending one before the boundary is not extended.",
     "line": 19,
-    "trigger": "A palindrome whose mirror ends exactly one position before the current palindrome's left boundary."
+    "trigger": "A palindrome whose mirror ends exactly one position before the current palindrome's left boundary.",
+    "rate": {
+      "5": 3.6,
+      "20": 7.0,
+      "max": 8.4
+    },
+    "tier": "hard"
   },
   {
     "problem": "longest_common_substring",
@@ -109,15 +187,27 @@
     "category": "init",
     "description": "Best length starts at -1, so when no common character exists a length-0 answer with a nonzero start is printed.",
     "line": 141,
-    "trigger": "S and T share no character (e.g. all 'a' vs all 'b'), likely only for short strings."
+    "trigger": "S and T share no character (e.g. all 'a' vs all 'b'), likely only for short strings.",
+    "rate": {
+      "5": 2.8,
+      "20": 0.4,
+      "max": 0.0
+    },
+    "tier": "hard"
   },
   {
     "problem": "prefix_substring_lcs",
-    "kind": "structural",
+    "kind": "large-size",
     "category": "off-by-one",
     "description": "Answer formula counts h-values < b+1 instead of < b.",
     "line": 84,
-    "trigger": "Any query where some h value equals b."
+    "trigger": "Any query where some h value equals b.",
+    "rate": {
+      "5": 41.0,
+      "20": 78.0,
+      "max": 97.0
+    },
+    "tier": "easy"
   },
   {
     "problem": "wildcard_pattern_matching",
@@ -125,7 +215,13 @@
     "category": "off-by-one",
     "description": "Letters are encoded from 0, so 'a' gets code 0 and behaves like the wildcard.",
     "line": 1081,
-    "trigger": "An alignment where 'a' faces a different letter."
+    "trigger": "An alignment where 'a' faces a different letter.",
+    "rate": {
+      "5": 33.8,
+      "20": 46.8,
+      "max": 46.6
+    },
+    "tier": "easy"
   },
   {
     "problem": "zalgorithm",
@@ -133,7 +229,13 @@
     "category": "off-by-one",
     "description": "Z-box reuse starts one past the mirrored value, skipping the mismatch check at r[i-j].",
     "line": 19,
-    "trigger": "Periodic strings where a mismatch sits right after a mirrored match inside the Z-box."
+    "trigger": "Periodic strings where a mismatch sits right after a mirrored match inside the Z-box.",
+    "rate": {
+      "5": 5.0,
+      "20": 35.6,
+      "max": 62.4
+    },
+    "tier": "easy"
   },
   {
     "problem": "suffixarray",
@@ -141,7 +243,13 @@
     "category": "init",
     "description": "SA-IS names the smallest LMS substring 0 instead of 1, colliding with the next name when equal LMS substrings follow.",
     "line": 103,
-    "trigger": "Strings with 3+ LMS positions and repeated LMS substrings (longer, periodic strings)."
+    "trigger": "Strings with 3+ LMS positions and repeated LMS substrings (longer, periodic strings).",
+    "rate": {
+      "5": 0.0,
+      "20": 5.4,
+      "max": 30.8
+    },
+    "tier": "easy"
   },
   {
     "problem": "number_of_substrings",
@@ -149,7 +257,13 @@
     "category": "init",
     "description": "SA-IS names the smallest LMS substring 0 instead of 1, giving a wrong suffix array and wrong LCP sum.",
     "line": 103,
-    "trigger": "Strings with 3+ LMS positions and repeated LMS substrings (longer, periodic strings)."
+    "trigger": "Strings with 3+ LMS positions and repeated LMS substrings (longer, periodic strings).",
+    "rate": {
+      "5": 0.0,
+      "20": 5.4,
+      "max": 30.6
+    },
+    "tier": "easy"
   },
   {
     "problem": "lyndon_factorization",
@@ -157,7 +271,13 @@
     "category": "boundary",
     "description": "Duval scan stops one character early, so the last character is never compared.",
     "line": 32,
-    "trigger": "Strings where the last character would extend or change the current Lyndon factor."
+    "trigger": "Strings where the last character would extend or change the current Lyndon factor.",
+    "rate": {
+      "5": 20.2,
+      "20": 31.8,
+      "max": 37.0
+    },
+    "tier": "easy"
   },
   {
     "problem": "two_edge_connected_components",
@@ -165,23 +285,41 @@
     "category": "edge-case",
     "description": "DFS skips up to two edges back to the parent, so a doubled tree edge is wrongly treated as a bridge.",
     "line": 27,
-    "trigger": "Exactly two parallel edges between a vertex and its DFS parent with no other cycle."
+    "trigger": "Exactly two parallel edges between a vertex and its DFS parent with no other cycle.",
+    "rate": {
+      "5": 18.6,
+      "20": 17.6,
+      "max": 17.6
+    },
+    "tier": "easy"
   },
   {
     "problem": "three_edge_connected_components",
-    "kind": "structural",
+    "kind": "large-size",
     "category": "boundary",
     "description": "Absorbing along the path uses in[u] < in[w], missing the case where the back edge lands exactly on u.",
     "line": 96,
-    "trigger": "A back edge whose endpoint is the head of the current path."
+    "trigger": "A back edge whose endpoint is the head of the current path.",
+    "rate": {
+      "5": 6.6,
+      "20": 28.2,
+      "max": 27.8
+    },
+    "tier": "easy"
   },
   {
     "problem": "incremental_scc",
-    "kind": "structural",
+    "kind": "large-size",
     "category": "boundary",
     "description": "Divide-and-conquer includes edge M in the left half's graph, so merges are dated one step early.",
     "line": 225,
-    "trigger": "An edge whose index equals a split point and closes a cycle."
+    "trigger": "An edge whose index equals a split point and closes a cycle.",
+    "rate": {
+      "5": 15.0,
+      "20": 41.6,
+      "max": 58.2
+    },
+    "tier": "easy"
   },
   {
     "problem": "enumerate_triangles",
@@ -189,31 +327,55 @@
     "category": "tie-break",
     "description": "Edge orientation breaks degree ties by input order, so equal-degree triangles can be oriented cyclically and missed.",
     "line": 35,
-    "trigger": "A triangle whose three vertices have equal degree."
+    "trigger": "A triangle whose three vertices have equal degree.",
+    "rate": {
+      "5": 7.4,
+      "20": 2.4,
+      "max": 0.2
+    },
+    "tier": "hard"
   },
   {
     "problem": "connected_components_of_complement_graph",
-    "kind": "structural",
+    "kind": "large-size",
     "category": "init",
     "description": "Neighbour flags are never cleared, so later BFS steps treat stale neighbours as adjacent.",
     "line": 43,
-    "trigger": "A component needing two or more BFS steps."
+    "trigger": "A component needing two or more BFS steps.",
+    "rate": {
+      "5": 26.4,
+      "20": 65.4,
+      "max": 83.6
+    },
+    "tier": "easy"
   },
   {
     "problem": "cartesian_tree",
-    "kind": "structural",
+    "kind": "large-size",
     "category": "edge-case",
     "description": "When popping the stack, the previous left child is not re-attached to its new parent.",
     "line": 17,
-    "trigger": "Two or more consecutive pops when a smaller element arrives."
+    "trigger": "Two or more consecutive pops when a smaller element arrives.",
+    "rate": {
+      "5": 18.4,
+      "20": 76.0,
+      "max": 97.6
+    },
+    "tier": "easy"
   },
   {
     "problem": "vertex_add_path_sum",
-    "kind": "structural",
+    "kind": "large-size",
     "category": "edge-case",
     "description": "Point updates go to the Fenwick tree but not to a[], whose value is used for the LCA term.",
     "line": 196,
-    "trigger": "A path query whose LCA was updated earlier."
+    "trigger": "A path query whose LCA was updated earlier.",
+    "rate": {
+      "5": 25.2,
+      "20": 54.6,
+      "max": 80.4
+    },
+    "tier": "easy"
   },
   {
     "problem": "vertex_add_subtree_sum",
@@ -221,7 +383,13 @@
     "category": "off-by-one",
     "description": "Fenwick add uses i < n and never updates node n.",
     "line": 21,
-    "trigger": "A subtree query whose Euler range ends at n (vertices on the rightmost DFS path)."
+    "trigger": "A subtree query whose Euler range ends at n (vertices on the rightmost DFS path).",
+    "rate": {
+      "5": 72.0,
+      "20": 68.8,
+      "max": 66.6
+    },
+    "tier": "easy"
   },
   {
     "problem": "frequency_table_of_tree_distance",
@@ -229,14 +397,26 @@
     "category": "off-by-one",
     "description": "NTT size is chosen for n+m-2 instead of n+m-1, so the convolution wraps when n+m-1 is 2^k+1.",
     "line": 194,
-    "trigger": "Depth arrays of length >= 8 (NTT path) with 2*len-1 = 2^k + 1, i.e. deep trees."
+    "trigger": "Depth arrays of length >= 8 (NTT path) with 2*len-1 = 2^k + 1, i.e. deep trees.",
+    "rate": {
+      "5": 0.0,
+      "20": 0.0,
+      "max": 13.4
+    },
+    "tier": "hard"
   },
   {
     "problem": "vertex_set_path_composite",
-    "kind": "structural",
+    "kind": "large-size",
     "category": "boundary",
     "description": "HLD lca uses < instead of <=, so when one vertex is the head of the other's heavy path it climbs too far.",
     "line": 39,
-    "trigger": "A query whose endpoints' lca is the head of a heavy path."
+    "trigger": "A query whose endpoints' lca is the head of a heavy path.",
+    "rate": {
+      "5": 23.6,
+      "20": 50.6,
+      "max": 83.8
+    },
+    "tier": "easy"
   }
 ]

@@ -30,6 +30,9 @@ beyond those listed here.
   * fast times out                    → bug, kind "TLE"
   * both exit 0, outputs disagree     → bug, kind "WA"
 - Sizes are always clamped to max_size from fuzz_config.json.
+- Dataset/bugs.json: one planted bug per problem with measured "rate" (% at sizes 5/20/max),
+  "tier" (hard = all rates <= 15 %) and "kind"; regenerate with tools/tier_bugs.py.
+  Note: suffixarray and number_of_substrings carry the same bug (shared SA-IS code).
 
 ## Design rules (do not change without being asked)
 - A pool entry is a recipe (variant, size, seed) that reached new coverage, never raw
@@ -46,6 +49,10 @@ beyond those listed here.
 - Two modes: "scale" (fixed test count, never stops early) and "hunt" (all workers
   stop on the first mismatch).
 - Optional knob: extra pool reads/writes per test, to make lock contention measurable.
+- Workloads: "scale" uses sol.cpp (correct; never stops early). "hunt" uses
+  sol_bug.cpp; time-to-bug comparisons use only tier "hard" problems.
+- No-sharing baseline = each worker keeps its OWN private pool and coverage map.
+  Sharing methods share one pool and one global coverage map.
 
 ## Environment
 WSL2 Ubuntu 24.04, 20 logical cores, g++ 13.3, Python 3.12.
