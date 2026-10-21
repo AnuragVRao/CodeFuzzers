@@ -4,7 +4,9 @@ code must be small, readable, and to the point. Prefer fewer files. No framework
 beyond those listed here.
 
 ## Layout
-- problems/<name>/  dataset (never modify unless explicitly asked)
+- Dataset/problems/<group>/<name>/  dataset; groups: arrays, graphs, strings.
+  Shared headers in Dataset/common/. Problem list comes from Dataset/manifest.json.
+  (never modify unless explicitly asked)
 - core/             C++17: fuzzer binary (worker threads, shared pool, 5 lock
                     strategies) and the forkserver + coverage runtime
 - tools/            Python 3.12 scripts: build.py, run.py, shrink.py, aggregate.py, llm.py
@@ -12,9 +14,18 @@ beyond those listed here.
 - results/          run outputs (gitignored)
 - dashboard/        Vite + React + Recharts, reads results/summary.json, no backend
 
+## Dataset conventions
+- reference = brute.cpp, fast = sol.cpp (later: sol_bug.cpp with a planted bug)
+- generator: ./generator <seed> [size]; prints test to stdout. Some problems also have
+  gen/generator_alt_1.cpp (a second "variant").
+- compile flags: g++ -O2 -std=c++17 -I Dataset/common -I <problem> -I <problem>/gen
+- a generator exiting non-zero means "skip this seed", not a bug
+- comparison: problems with checker_kind "exact-match" use token-wise comparison;
+  the 5 "custom" ones run checker.cpp as: checker <input> <output> <answer>
+
 ## Design rules (do not change without being asked)
-- Pool entries are generator PARAMETERS (seed + size knobs), never raw input text.
-  Mutation and shrinking change parameters, so generated inputs are always valid.
+- A pool entry is a recipe (variant, size, seed) that reached new coverage, never raw
+  input text. Mutation keeps the variant, perturbs size (clamped), draws a fresh seed.
 - The shared pool lives only in C++. Python never touches it during a timed run.
 - Pool strategies: global mutex, sharded mutexes, shared_mutex (readers-writers),
   RCU-style snapshot (atomic shared_ptr swap), and no-sharing baseline.
@@ -35,3 +46,5 @@ WSL2 Ubuntu 24.04, 20 logical cores, g++ 13.3, Python 3.12.
 - Small steps. Do only what the current prompt asks; do not start the next step.
 - End every step by running the test command given and showing its real output.
 - Do not add dependencies without asking.
+- The repo path contains a space. Always call subprocess with argument lists, never
+  shell strings; quote paths in any shell command.

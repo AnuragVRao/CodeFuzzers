@@ -3,3 +3,4 @@ results/
 dashboard/node_modules/
 dashboard/dist/
 __pycache__/
+*:Zone.Identifier

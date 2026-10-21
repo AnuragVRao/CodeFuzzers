@@ -5,11 +5,12 @@ using namespace std;
 
 const int MOD = 998244353;
 
-int main(int, char* argv[]) {
+int main(int argc, char* argv[]) {
     long long seed = atoll(argv[1]);
+    int cap = argc > 2 ? atoi(argv[2]) : 0;  // size knob; 0 = original ranges
     auto gen = Random(seed);
 
-    int q = gen.uniform(10, 50);
+    int q = cap ? gen.uniform(1, cap) : gen.uniform(10, 50);
     printf("%d\n", 2 * q);
 
     int length = 0;

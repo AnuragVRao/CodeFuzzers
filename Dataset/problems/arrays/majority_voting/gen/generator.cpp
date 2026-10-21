@@ -1,12 +1,14 @@
 #include "random.h"
+#include "../params.h"
 #include <cstdio>
 
-int main(int, char *argv[]) {
+int main(int argc, char *argv[]) {
     long long seed = atoll(argv[1]);
+    int cap = argc > 2 ? std::min<long long>(atoi(argv[2]), N_MAX) : 0;  // size knob; 0 = original ranges
     auto gen = Random(seed);
 
-    int N = seed % 500 + 1;
-    int Q = 1000;
+    int N = cap ? gen.uniform(1, cap) : seed % 500 + 1;
+    int Q = cap ? gen.uniform(1, cap) : 1000;
     printf("%d %d\n", N, Q);
 
     int cand = gen.uniform(0, 1'000'000'000);

@@ -45,9 +45,10 @@ size_t random_component_limit(
     return res;
 }
 
-int main(int, char* argv[]) {
+int main(int argc, char* argv[]) {
 
     long long seed = atoll(argv[1]);
+    int cap = argc > 2 ? std::min<long long>(atoi(argv[2]), N_MAX) : 0;  // size knob; 0 = original ranges
     auto gen = Random(seed);
     const vector<pair<size_t, size_t>> fixed_limits = {
         {3, 2}, {1, 1}, {3, 1},
@@ -72,7 +73,7 @@ int main(int, char* argv[]) {
         edge_buf.emplace_back(x, y);
     };
 
-    const int n = gen.uniform<int>(N_MIN, 100);
+    const int n = gen.uniform<int>(N_MIN, cap ? cap : 100);
     int size = gen.uniform<int>(1, round_sqrt(n));
     if (gen.uniform_bool()) {
         size = n / size;

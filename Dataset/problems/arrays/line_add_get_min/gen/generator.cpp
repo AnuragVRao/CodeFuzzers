@@ -5,13 +5,14 @@
 using namespace std;
 using ll = long long;
 
-int main(int, char* argv[]) {
+int main(int argc, char* argv[]) {
 
     long long seed = atoll(argv[1]);
+    int cap = argc > 2 ? std::min<long long>(atoi(argv[2]), N_AND_Q_MAX) : 0;  // size knob; 0 = original ranges
     auto gen = Random(seed);
 
-    int n = gen.uniform(N_AND_Q_MIN, 20ll);
-    int q = gen.uniform(N_AND_Q_MIN, 20ll);
+    int n = gen.uniform(N_AND_Q_MIN, cap ? (ll)cap : 20ll);
+    int q = gen.uniform(N_AND_Q_MIN, cap ? (ll)cap : 20ll);
     printf("%d %d\n", n, q);
     for (int i = 0; i < n; i++) {
         int a = gen.uniform(-A_ABS_MAX, A_ABS_MAX);

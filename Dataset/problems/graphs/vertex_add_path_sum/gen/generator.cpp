@@ -4,13 +4,14 @@
 
 using namespace std;
 
-int main(int, char* argv[]) {
+int main(int argc, char* argv[]) {
 
     long long seed = atoll(argv[1]);
+    int cap = argc > 2 ? std::min<long long>(atoi(argv[2]), N_AND_Q_MAX) : 0;  // size knob; 0 = original ranges
     auto gen = Random(seed);
 
-    int n = gen.uniform(1, 1000);
-    int q = gen.uniform(1, 1000);
+    int n = gen.uniform(1, cap ? cap : 1000);
+    int q = gen.uniform(1, cap ? cap : 1000);
     printf("%d %d\n", n, q);
     for (int i = 0; i < n; i++) {
         printf("%d", gen.uniform<int>(0, A_AND_X_MAX));
