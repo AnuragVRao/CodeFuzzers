@@ -1,0 +1,16 @@
+CodeFuzzers benchmark suite
+
+This suite contains material from Library Checker (https://github.com/yosupo06/library-checker-problems),
+Copyright its authors and contributors, licensed under the Apache License 2.0 (see LICENSE).
+Upstream commit: 1814c4e5205517e368bb57a8d1127eb961cfeaae.
+
+Changes made to the upstream material:
+  * Files were copied unmodified except for renaming and re-arranging into the layout described in README.md
+    (correct.cpp -> sol.cpp, naive.cpp / bruteforce.cpp -> brute.cpp, a chosen generator -> gen/generator.cpp).
+  * params.h is generated from each problem's info.toml, as Library Checker's generate.py does.
+
+Files authored for this project (also Apache-2.0): the generators and brute forces whose meta.json says
+"authored", and tools/validate.py.
+
+common/testlib.h is Mike Mirzayanov's testlib (https://github.com/MikeMirzayanov/testlib); see that repository
+for its license terms. common/random.h and common/fastio.h are from Library Checker.

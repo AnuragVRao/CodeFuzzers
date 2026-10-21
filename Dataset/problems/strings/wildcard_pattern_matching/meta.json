@@ -1,0 +1,29 @@
+{
+  "name": "wildcard_pattern_matching",
+  "input_type": "string",
+  "subtype": null,
+  "source": {
+    "project": "Library Checker",
+    "repo": "https://github.com/yosupo06/library-checker-problems",
+    "commit": "1814c4e5205517e368bb57a8d1127eb961cfeaae",
+    "path": "string/wildcard_pattern_matching",
+    "license": "Apache-2.0"
+  },
+  "files": {
+    "generator": "gen/generator.cpp",
+    "brute": "brute.cpp",
+    "fast_solution": "sol.cpp",
+    "verifier": "verifier.cpp",
+    "checker": "checker.cpp",
+    "params": "params.h"
+  },
+  "generator": {
+    "kind": "authored-size-knob",
+    "takes_size_arg": true,
+    "default_size": 16,
+    "alternates": []
+  },
+  "brute_origin": "library-checker: sol/bruteforce.cpp",
+  "checker_kind": "exact-match",
+  "planted_bugs": []
+}

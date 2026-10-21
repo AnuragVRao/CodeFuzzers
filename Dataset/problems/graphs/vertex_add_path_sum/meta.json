@@ -1,0 +1,29 @@
+{
+  "name": "vertex_add_path_sum",
+  "input_type": "graph",
+  "subtype": "tree",
+  "source": {
+    "project": "Library Checker",
+    "repo": "https://github.com/yosupo06/library-checker-problems",
+    "commit": "1814c4e5205517e368bb57a8d1127eb961cfeaae",
+    "path": "tree/vertex_add_path_sum",
+    "license": "Apache-2.0"
+  },
+  "files": {
+    "generator": "gen/generator.cpp",
+    "brute": "brute.cpp",
+    "fast_solution": "sol.cpp",
+    "verifier": "verifier.cpp",
+    "checker": "checker.cpp",
+    "params": "params.h"
+  },
+  "generator": {
+    "kind": "native-small",
+    "takes_size_arg": false,
+    "primary": "small.cpp",
+    "alternates": []
+  },
+  "brute_origin": "library-checker: sol/naive.cpp",
+  "checker_kind": "exact-match",
+  "planted_bugs": []
+}

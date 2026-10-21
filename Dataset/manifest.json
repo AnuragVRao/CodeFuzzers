@@ -1,0 +1,894 @@
+{
+  "suite": "CodeFuzzers benchmark suite",
+  "count": 30,
+  "library_checker_commit": "1814c4e5205517e368bb57a8d1127eb961cfeaae",
+  "problems": [
+    {
+      "name": "range_add_range_min",
+      "input_type": "array",
+      "subtype": null,
+      "source": {
+        "project": "Library Checker",
+        "repo": "https://github.com/yosupo06/library-checker-problems",
+        "commit": "1814c4e5205517e368bb57a8d1127eb961cfeaae",
+        "path": "data_structure/range_add_range_min",
+        "license": "Apache-2.0"
+      },
+      "files": {
+        "generator": "gen/generator.cpp",
+        "brute": "brute.cpp",
+        "fast_solution": "sol.cpp",
+        "verifier": "verifier.cpp",
+        "checker": "checker.cpp",
+        "params": "params.h"
+      },
+      "generator": {
+        "kind": "native-small",
+        "takes_size_arg": false,
+        "primary": "small_random.cpp",
+        "alternates": [
+          "small.cpp"
+        ]
+      },
+      "brute_origin": "library-checker: sol/naive.cpp",
+      "checker_kind": "exact-match",
+      "planted_bugs": []
+    },
+    {
+      "name": "range_affine_range_sum",
+      "input_type": "array",
+      "subtype": null,
+      "source": {
+        "project": "Library Checker",
+        "repo": "https://github.com/yosupo06/library-checker-problems",
+        "commit": "1814c4e5205517e368bb57a8d1127eb961cfeaae",
+        "path": "data_structure/range_affine_range_sum",
+        "license": "Apache-2.0"
+      },
+      "files": {
+        "generator": "gen/generator.cpp",
+        "brute": "brute.cpp",
+        "fast_solution": "sol.cpp",
+        "verifier": "verifier.cpp",
+        "checker": "checker.cpp",
+        "params": "params.h"
+      },
+      "generator": {
+        "kind": "native-small",
+        "takes_size_arg": false,
+        "primary": "small_random.cpp",
+        "alternates": [
+          "small.cpp"
+        ]
+      },
+      "brute_origin": "library-checker: sol/naive.cpp",
+      "checker_kind": "exact-match",
+      "planted_bugs": []
+    },
+    {
+      "name": "range_set_range_composite",
+      "input_type": "array",
+      "subtype": null,
+      "source": {
+        "project": "Library Checker",
+        "repo": "https://github.com/yosupo06/library-checker-problems",
+        "commit": "1814c4e5205517e368bb57a8d1127eb961cfeaae",
+        "path": "data_structure/range_set_range_composite",
+        "license": "Apache-2.0"
+      },
+      "files": {
+        "generator": "gen/generator.cpp",
+        "brute": "brute.cpp",
+        "fast_solution": "sol.cpp",
+        "verifier": "verifier.cpp",
+        "checker": "checker.cpp",
+        "params": "params.h"
+      },
+      "generator": {
+        "kind": "native-small",
+        "takes_size_arg": false,
+        "primary": "small_random.cpp",
+        "alternates": [
+          "small.cpp"
+        ]
+      },
+      "brute_origin": "library-checker: sol/naive.cpp",
+      "checker_kind": "exact-match",
+      "planted_bugs": []
+    },
+    {
+      "name": "range_linear_add_range_min",
+      "input_type": "array",
+      "subtype": null,
+      "source": {
+        "project": "Library Checker",
+        "repo": "https://github.com/yosupo06/library-checker-problems",
+        "commit": "1814c4e5205517e368bb57a8d1127eb961cfeaae",
+        "path": "data_structure/range_linear_add_range_min",
+        "license": "Apache-2.0"
+      },
+      "files": {
+        "generator": "gen/generator.cpp",
+        "brute": "brute.cpp",
+        "fast_solution": "sol.cpp",
+        "verifier": "verifier.cpp",
+        "checker": "checker.cpp",
+        "params": "params.h"
+      },
+      "generator": {
+        "kind": "native-small",
+        "takes_size_arg": false,
+        "primary": "small_random.cpp",
+        "alternates": [
+          "small.cpp"
+        ]
+      },
+      "brute_origin": "library-checker: sol/naive.cpp",
+      "checker_kind": "exact-match",
+      "planted_bugs": []
+    },
+    {
+      "name": "range_affine_point_get",
+      "input_type": "array",
+      "subtype": null,
+      "source": {
+        "project": "Library Checker",
+        "repo": "https://github.com/yosupo06/library-checker-problems",
+        "commit": "1814c4e5205517e368bb57a8d1127eb961cfeaae",
+        "path": "data_structure/range_affine_point_get",
+        "license": "Apache-2.0"
+      },
+      "files": {
+        "generator": "gen/generator.cpp",
+        "brute": "brute.cpp",
+        "fast_solution": "sol.cpp",
+        "verifier": "verifier.cpp",
+        "checker": "checker.cpp",
+        "params": "params.h"
+      },
+      "generator": {
+        "kind": "native-small",
+        "takes_size_arg": false,
+        "primary": "small_random.cpp",
+        "alternates": [
+          "small.cpp"
+        ]
+      },
+      "brute_origin": "library-checker: sol/naive.cpp",
+      "checker_kind": "exact-match",
+      "planted_bugs": []
+    },
+    {
+      "name": "range_kth_smallest",
+      "input_type": "array",
+      "subtype": null,
+      "source": {
+        "project": "Library Checker",
+        "repo": "https://github.com/yosupo06/library-checker-problems",
+        "commit": "1814c4e5205517e368bb57a8d1127eb961cfeaae",
+        "path": "data_structure/range_kth_smallest",
+        "license": "Apache-2.0"
+      },
+      "files": {
+        "generator": "gen/generator.cpp",
+        "brute": "brute.cpp",
+        "fast_solution": "sol.cpp",
+        "verifier": "verifier.cpp",
+        "checker": "checker.cpp",
+        "params": "params.h"
+      },
+      "generator": {
+        "kind": "native-small",
+        "takes_size_arg": false,
+        "primary": "small.cpp",
+        "alternates": []
+      },
+      "brute_origin": "library-checker: sol/naive.cpp",
+      "checker_kind": "exact-match",
+      "planted_bugs": []
+    },
+    {
+      "name": "line_add_get_min",
+      "input_type": "array",
+      "subtype": null,
+      "source": {
+        "project": "Library Checker",
+        "repo": "https://github.com/yosupo06/library-checker-problems",
+        "commit": "1814c4e5205517e368bb57a8d1127eb961cfeaae",
+        "path": "data_structure/line_add_get_min",
+        "license": "Apache-2.0"
+      },
+      "files": {
+        "generator": "gen/generator.cpp",
+        "brute": "brute.cpp",
+        "fast_solution": "sol.cpp",
+        "verifier": "verifier.cpp",
+        "checker": "checker.cpp",
+        "params": "params.h"
+      },
+      "generator": {
+        "kind": "native-small",
+        "takes_size_arg": false,
+        "primary": "small.cpp",
+        "alternates": []
+      },
+      "brute_origin": "library-checker: sol/naive.cpp",
+      "checker_kind": "exact-match",
+      "planted_bugs": []
+    },
+    {
+      "name": "static_range_mode_query",
+      "input_type": "array",
+      "subtype": null,
+      "source": {
+        "project": "Library Checker",
+        "repo": "https://github.com/yosupo06/library-checker-problems",
+        "commit": "1814c4e5205517e368bb57a8d1127eb961cfeaae",
+        "path": "data_structure/static_range_mode_query",
+        "license": "Apache-2.0"
+      },
+      "files": {
+        "generator": "gen/generator.cpp",
+        "brute": "brute.cpp",
+        "fast_solution": "sol.cpp",
+        "verifier": "verifier.cpp",
+        "checker": "checker.cpp",
+        "params": "params.h"
+      },
+      "generator": {
+        "kind": "authored-size-knob",
+        "takes_size_arg": true,
+        "default_size": 16,
+        "alternates": []
+      },
+      "brute_origin": "library-checker: sol/naive.cpp",
+      "checker_kind": "custom",
+      "planted_bugs": []
+    },
+    {
+      "name": "deque_operate_all_composite",
+      "input_type": "array",
+      "subtype": null,
+      "source": {
+        "project": "Library Checker",
+        "repo": "https://github.com/yosupo06/library-checker-problems",
+        "commit": "1814c4e5205517e368bb57a8d1127eb961cfeaae",
+        "path": "data_structure/deque_operate_all_composite",
+        "license": "Apache-2.0"
+      },
+      "files": {
+        "generator": "gen/generator.cpp",
+        "brute": "brute.cpp",
+        "fast_solution": "sol.cpp",
+        "verifier": "verifier.cpp",
+        "checker": "checker.cpp",
+        "params": "params.h"
+      },
+      "generator": {
+        "kind": "native-small",
+        "takes_size_arg": false,
+        "primary": "small.cpp",
+        "alternates": []
+      },
+      "brute_origin": "library-checker: sol/naive.cpp",
+      "checker_kind": "exact-match",
+      "planted_bugs": []
+    },
+    {
+      "name": "majority_voting",
+      "input_type": "array",
+      "subtype": null,
+      "source": {
+        "project": "Library Checker",
+        "repo": "https://github.com/yosupo06/library-checker-problems",
+        "commit": "1814c4e5205517e368bb57a8d1127eb961cfeaae",
+        "path": "data_structure/majority_voting",
+        "license": "Apache-2.0"
+      },
+      "files": {
+        "generator": "gen/generator.cpp",
+        "brute": "brute.cpp",
+        "fast_solution": "sol.cpp",
+        "verifier": "verifier.cpp",
+        "checker": "checker.cpp",
+        "params": "params.h"
+      },
+      "generator": {
+        "kind": "native-small",
+        "takes_size_arg": false,
+        "primary": "small.cpp",
+        "alternates": []
+      },
+      "brute_origin": "library-checker: sol/naive.cpp",
+      "checker_kind": "exact-match",
+      "planted_bugs": []
+    },
+    {
+      "name": "rectangle_sum",
+      "input_type": "array",
+      "subtype": null,
+      "source": {
+        "project": "Library Checker",
+        "repo": "https://github.com/yosupo06/library-checker-problems",
+        "commit": "1814c4e5205517e368bb57a8d1127eb961cfeaae",
+        "path": "data_structure/rectangle_sum",
+        "license": "Apache-2.0"
+      },
+      "files": {
+        "generator": "gen/generator.cpp",
+        "brute": "brute.cpp",
+        "fast_solution": "sol.cpp",
+        "verifier": "verifier.cpp",
+        "checker": "checker.cpp",
+        "params": "params.h"
+      },
+      "generator": {
+        "kind": "native-small",
+        "takes_size_arg": false,
+        "primary": "small.cpp",
+        "alternates": []
+      },
+      "brute_origin": "library-checker: sol/naive.cpp",
+      "checker_kind": "exact-match",
+      "planted_bugs": []
+    },
+    {
+      "name": "static_range_lis_query",
+      "input_type": "array",
+      "subtype": null,
+      "source": {
+        "project": "Library Checker",
+        "repo": "https://github.com/yosupo06/library-checker-problems",
+        "commit": "1814c4e5205517e368bb57a8d1127eb961cfeaae",
+        "path": "data_structure/static_range_lis_query",
+        "license": "Apache-2.0"
+      },
+      "files": {
+        "generator": "gen/generator.cpp",
+        "brute": "brute.cpp",
+        "fast_solution": "sol.cpp",
+        "verifier": "verifier.cpp",
+        "checker": "checker.cpp",
+        "params": "params.h"
+      },
+      "generator": {
+        "kind": "native-small",
+        "takes_size_arg": false,
+        "primary": "small_random.cpp",
+        "alternates": []
+      },
+      "brute_origin": "library-checker: sol/naive.cpp",
+      "checker_kind": "exact-match",
+      "planted_bugs": []
+    },
+    {
+      "name": "enumerate_palindromes",
+      "input_type": "string",
+      "subtype": null,
+      "source": {
+        "project": "Library Checker",
+        "repo": "https://github.com/yosupo06/library-checker-problems",
+        "commit": "1814c4e5205517e368bb57a8d1127eb961cfeaae",
+        "path": "string/enumerate_palindromes",
+        "license": "Apache-2.0"
+      },
+      "files": {
+        "generator": "gen/generator.cpp",
+        "brute": "brute.cpp",
+        "fast_solution": "sol.cpp",
+        "verifier": "verifier.cpp",
+        "checker": "checker.cpp",
+        "params": "params.h"
+      },
+      "generator": {
+        "kind": "native-small",
+        "takes_size_arg": false,
+        "primary": "small.cpp",
+        "alternates": []
+      },
+      "brute_origin": "library-checker: sol/naive.cpp",
+      "checker_kind": "exact-match",
+      "planted_bugs": []
+    },
+    {
+      "name": "longest_common_substring",
+      "input_type": "string",
+      "subtype": null,
+      "source": {
+        "project": "Library Checker",
+        "repo": "https://github.com/yosupo06/library-checker-problems",
+        "commit": "1814c4e5205517e368bb57a8d1127eb961cfeaae",
+        "path": "string/longest_common_substring",
+        "license": "Apache-2.0"
+      },
+      "files": {
+        "generator": "gen/generator.cpp",
+        "brute": "brute.cpp",
+        "fast_solution": "sol.cpp",
+        "verifier": "verifier.cpp",
+        "checker": "checker.cpp",
+        "params": "params.h"
+      },
+      "generator": {
+        "kind": "native-small",
+        "takes_size_arg": false,
+        "primary": "small.cpp",
+        "alternates": []
+      },
+      "brute_origin": "library-checker: sol/naive.cpp",
+      "checker_kind": "custom",
+      "planted_bugs": []
+    },
+    {
+      "name": "prefix_substring_lcs",
+      "input_type": "string",
+      "subtype": null,
+      "source": {
+        "project": "Library Checker",
+        "repo": "https://github.com/yosupo06/library-checker-problems",
+        "commit": "1814c4e5205517e368bb57a8d1127eb961cfeaae",
+        "path": "string/prefix_substring_lcs",
+        "license": "Apache-2.0"
+      },
+      "files": {
+        "generator": "gen/generator.cpp",
+        "brute": "brute.cpp",
+        "fast_solution": "sol.cpp",
+        "verifier": "verifier.cpp",
+        "checker": "checker.cpp",
+        "params": "params.h"
+      },
+      "generator": {
+        "kind": "authored-size-knob",
+        "takes_size_arg": true,
+        "default_size": 16,
+        "alternates": []
+      },
+      "brute_origin": "library-checker: sol/naive.cpp",
+      "checker_kind": "exact-match",
+      "planted_bugs": []
+    },
+    {
+      "name": "wildcard_pattern_matching",
+      "input_type": "string",
+      "subtype": null,
+      "source": {
+        "project": "Library Checker",
+        "repo": "https://github.com/yosupo06/library-checker-problems",
+        "commit": "1814c4e5205517e368bb57a8d1127eb961cfeaae",
+        "path": "string/wildcard_pattern_matching",
+        "license": "Apache-2.0"
+      },
+      "files": {
+        "generator": "gen/generator.cpp",
+        "brute": "brute.cpp",
+        "fast_solution": "sol.cpp",
+        "verifier": "verifier.cpp",
+        "checker": "checker.cpp",
+        "params": "params.h"
+      },
+      "generator": {
+        "kind": "authored-size-knob",
+        "takes_size_arg": true,
+        "default_size": 16,
+        "alternates": []
+      },
+      "brute_origin": "library-checker: sol/bruteforce.cpp",
+      "checker_kind": "exact-match",
+      "planted_bugs": []
+    },
+    {
+      "name": "zalgorithm",
+      "input_type": "string",
+      "subtype": null,
+      "source": {
+        "project": "Library Checker",
+        "repo": "https://github.com/yosupo06/library-checker-problems",
+        "commit": "1814c4e5205517e368bb57a8d1127eb961cfeaae",
+        "path": "string/zalgorithm",
+        "license": "Apache-2.0"
+      },
+      "files": {
+        "generator": "gen/generator.cpp",
+        "brute": "brute.cpp",
+        "fast_solution": "sol.cpp",
+        "verifier": "verifier.cpp",
+        "checker": "checker.cpp",
+        "params": "params.h"
+      },
+      "generator": {
+        "kind": "authored-size-knob",
+        "takes_size_arg": true,
+        "default_size": 16,
+        "alternates": []
+      },
+      "brute_origin": "authored (this project)",
+      "checker_kind": "exact-match",
+      "planted_bugs": []
+    },
+    {
+      "name": "suffixarray",
+      "input_type": "string",
+      "subtype": null,
+      "source": {
+        "project": "Library Checker",
+        "repo": "https://github.com/yosupo06/library-checker-problems",
+        "commit": "1814c4e5205517e368bb57a8d1127eb961cfeaae",
+        "path": "string/suffixarray",
+        "license": "Apache-2.0"
+      },
+      "files": {
+        "generator": "gen/generator.cpp",
+        "brute": "brute.cpp",
+        "fast_solution": "sol.cpp",
+        "verifier": "verifier.cpp",
+        "checker": "checker.cpp",
+        "params": "params.h"
+      },
+      "generator": {
+        "kind": "authored-size-knob",
+        "takes_size_arg": true,
+        "default_size": 16,
+        "alternates": []
+      },
+      "brute_origin": "authored (this project)",
+      "checker_kind": "exact-match",
+      "planted_bugs": []
+    },
+    {
+      "name": "number_of_substrings",
+      "input_type": "string",
+      "subtype": null,
+      "source": {
+        "project": "Library Checker",
+        "repo": "https://github.com/yosupo06/library-checker-problems",
+        "commit": "1814c4e5205517e368bb57a8d1127eb961cfeaae",
+        "path": "string/number_of_substrings",
+        "license": "Apache-2.0"
+      },
+      "files": {
+        "generator": "gen/generator.cpp",
+        "brute": "brute.cpp",
+        "fast_solution": "sol.cpp",
+        "verifier": "verifier.cpp",
+        "checker": "checker.cpp",
+        "params": "params.h"
+      },
+      "generator": {
+        "kind": "authored-size-knob",
+        "takes_size_arg": true,
+        "default_size": 16,
+        "alternates": []
+      },
+      "brute_origin": "authored (this project)",
+      "checker_kind": "exact-match",
+      "planted_bugs": []
+    },
+    {
+      "name": "lyndon_factorization",
+      "input_type": "string",
+      "subtype": null,
+      "source": {
+        "project": "Library Checker",
+        "repo": "https://github.com/yosupo06/library-checker-problems",
+        "commit": "1814c4e5205517e368bb57a8d1127eb961cfeaae",
+        "path": "string/lyndon_factorization",
+        "license": "Apache-2.0"
+      },
+      "files": {
+        "generator": "gen/generator.cpp",
+        "brute": "brute.cpp",
+        "fast_solution": "sol.cpp",
+        "verifier": "verifier.cpp",
+        "checker": "checker.cpp",
+        "params": "params.h"
+      },
+      "generator": {
+        "kind": "authored-size-knob",
+        "takes_size_arg": true,
+        "default_size": 16,
+        "alternates": []
+      },
+      "brute_origin": "authored (this project)",
+      "checker_kind": "exact-match",
+      "planted_bugs": []
+    },
+    {
+      "name": "two_edge_connected_components",
+      "input_type": "graph",
+      "subtype": null,
+      "source": {
+        "project": "Library Checker",
+        "repo": "https://github.com/yosupo06/library-checker-problems",
+        "commit": "1814c4e5205517e368bb57a8d1127eb961cfeaae",
+        "path": "graph/two_edge_connected_components",
+        "license": "Apache-2.0"
+      },
+      "files": {
+        "generator": "gen/generator.cpp",
+        "brute": "brute.cpp",
+        "fast_solution": "sol.cpp",
+        "verifier": "verifier.cpp",
+        "checker": "checker.cpp",
+        "params": "params.h"
+      },
+      "generator": {
+        "kind": "native-small",
+        "takes_size_arg": false,
+        "primary": "small_random_1.cpp",
+        "alternates": [
+          "small_random_2.cpp"
+        ]
+      },
+      "brute_origin": "library-checker: sol/naive.cpp",
+      "checker_kind": "custom",
+      "planted_bugs": []
+    },
+    {
+      "name": "three_edge_connected_components",
+      "input_type": "graph",
+      "subtype": null,
+      "source": {
+        "project": "Library Checker",
+        "repo": "https://github.com/yosupo06/library-checker-problems",
+        "commit": "1814c4e5205517e368bb57a8d1127eb961cfeaae",
+        "path": "graph/three_edge_connected_components",
+        "license": "Apache-2.0"
+      },
+      "files": {
+        "generator": "gen/generator.cpp",
+        "brute": "brute.cpp",
+        "fast_solution": "sol.cpp",
+        "verifier": "verifier.cpp",
+        "checker": "checker.cpp",
+        "params": "params.h"
+      },
+      "generator": {
+        "kind": "native-small",
+        "takes_size_arg": false,
+        "primary": "small_random_1.cpp",
+        "alternates": [
+          "small_random_2.cpp"
+        ]
+      },
+      "brute_origin": "library-checker: sol/naive.cpp",
+      "checker_kind": "custom",
+      "planted_bugs": []
+    },
+    {
+      "name": "incremental_scc",
+      "input_type": "graph",
+      "subtype": null,
+      "source": {
+        "project": "Library Checker",
+        "repo": "https://github.com/yosupo06/library-checker-problems",
+        "commit": "1814c4e5205517e368bb57a8d1127eb961cfeaae",
+        "path": "graph/incremental_scc",
+        "license": "Apache-2.0"
+      },
+      "files": {
+        "generator": "gen/generator.cpp",
+        "brute": "brute.cpp",
+        "fast_solution": "sol.cpp",
+        "verifier": "verifier.cpp",
+        "checker": "checker.cpp",
+        "params": "params.h"
+      },
+      "generator": {
+        "kind": "native-small",
+        "takes_size_arg": false,
+        "primary": "small_random.cpp",
+        "alternates": []
+      },
+      "brute_origin": "library-checker: sol/naive.cpp",
+      "checker_kind": "exact-match",
+      "planted_bugs": []
+    },
+    {
+      "name": "enumerate_triangles",
+      "input_type": "graph",
+      "subtype": null,
+      "source": {
+        "project": "Library Checker",
+        "repo": "https://github.com/yosupo06/library-checker-problems",
+        "commit": "1814c4e5205517e368bb57a8d1127eb961cfeaae",
+        "path": "graph/enumerate_triangles",
+        "license": "Apache-2.0"
+      },
+      "files": {
+        "generator": "gen/generator.cpp",
+        "brute": "brute.cpp",
+        "fast_solution": "sol.cpp",
+        "verifier": "verifier.cpp",
+        "checker": "checker.cpp",
+        "params": "params.h"
+      },
+      "generator": {
+        "kind": "native-small",
+        "takes_size_arg": false,
+        "primary": "small_sparse.cpp",
+        "alternates": []
+      },
+      "brute_origin": "library-checker: sol/naive.cpp",
+      "checker_kind": "exact-match",
+      "planted_bugs": [],
+      "known_issues": [
+        "Upstream generator (small_sparse.cpp) aborts on a few seeds (e.g. seed 232 of 0-299): an assertion fails when n=1. Harnesses should skip seeds where the generator exits non-zero."
+      ]
+    },
+    {
+      "name": "connected_components_of_complement_graph",
+      "input_type": "graph",
+      "subtype": null,
+      "source": {
+        "project": "Library Checker",
+        "repo": "https://github.com/yosupo06/library-checker-problems",
+        "commit": "1814c4e5205517e368bb57a8d1127eb961cfeaae",
+        "path": "graph/connected_components_of_complement_graph",
+        "license": "Apache-2.0"
+      },
+      "files": {
+        "generator": "gen/generator.cpp",
+        "brute": "brute.cpp",
+        "fast_solution": "sol.cpp",
+        "verifier": "verifier.cpp",
+        "checker": "checker.cpp",
+        "params": "params.h"
+      },
+      "generator": {
+        "kind": "authored-size-knob",
+        "takes_size_arg": true,
+        "default_size": 16,
+        "alternates": []
+      },
+      "brute_origin": "library-checker: sol/naive.cpp",
+      "checker_kind": "custom",
+      "planted_bugs": []
+    },
+    {
+      "name": "cartesian_tree",
+      "input_type": "graph",
+      "subtype": "tree",
+      "source": {
+        "project": "Library Checker",
+        "repo": "https://github.com/yosupo06/library-checker-problems",
+        "commit": "1814c4e5205517e368bb57a8d1127eb961cfeaae",
+        "path": "tree/cartesian_tree",
+        "license": "Apache-2.0"
+      },
+      "files": {
+        "generator": "gen/generator.cpp",
+        "brute": "brute.cpp",
+        "fast_solution": "sol.cpp",
+        "verifier": "verifier.cpp",
+        "checker": "checker.cpp",
+        "params": "params.h"
+      },
+      "generator": {
+        "kind": "native-small",
+        "takes_size_arg": false,
+        "primary": "small.cpp",
+        "alternates": []
+      },
+      "brute_origin": "library-checker: sol/naive.cpp",
+      "checker_kind": "exact-match",
+      "planted_bugs": []
+    },
+    {
+      "name": "vertex_add_path_sum",
+      "input_type": "graph",
+      "subtype": "tree",
+      "source": {
+        "project": "Library Checker",
+        "repo": "https://github.com/yosupo06/library-checker-problems",
+        "commit": "1814c4e5205517e368bb57a8d1127eb961cfeaae",
+        "path": "tree/vertex_add_path_sum",
+        "license": "Apache-2.0"
+      },
+      "files": {
+        "generator": "gen/generator.cpp",
+        "brute": "brute.cpp",
+        "fast_solution": "sol.cpp",
+        "verifier": "verifier.cpp",
+        "checker": "checker.cpp",
+        "params": "params.h"
+      },
+      "generator": {
+        "kind": "native-small",
+        "takes_size_arg": false,
+        "primary": "small.cpp",
+        "alternates": []
+      },
+      "brute_origin": "library-checker: sol/naive.cpp",
+      "checker_kind": "exact-match",
+      "planted_bugs": []
+    },
+    {
+      "name": "vertex_add_subtree_sum",
+      "input_type": "graph",
+      "subtype": "tree",
+      "source": {
+        "project": "Library Checker",
+        "repo": "https://github.com/yosupo06/library-checker-problems",
+        "commit": "1814c4e5205517e368bb57a8d1127eb961cfeaae",
+        "path": "tree/vertex_add_subtree_sum",
+        "license": "Apache-2.0"
+      },
+      "files": {
+        "generator": "gen/generator.cpp",
+        "brute": "brute.cpp",
+        "fast_solution": "sol.cpp",
+        "verifier": "verifier.cpp",
+        "checker": "checker.cpp",
+        "params": "params.h"
+      },
+      "generator": {
+        "kind": "native-small",
+        "takes_size_arg": false,
+        "primary": "small.cpp",
+        "alternates": []
+      },
+      "brute_origin": "library-checker: sol/naive.cpp",
+      "checker_kind": "exact-match",
+      "planted_bugs": []
+    },
+    {
+      "name": "frequency_table_of_tree_distance",
+      "input_type": "graph",
+      "subtype": "tree",
+      "source": {
+        "project": "Library Checker",
+        "repo": "https://github.com/yosupo06/library-checker-problems",
+        "commit": "1814c4e5205517e368bb57a8d1127eb961cfeaae",
+        "path": "tree/frequency_table_of_tree_distance",
+        "license": "Apache-2.0"
+      },
+      "files": {
+        "generator": "gen/generator.cpp",
+        "brute": "brute.cpp",
+        "fast_solution": "sol.cpp",
+        "verifier": "verifier.cpp",
+        "checker": "checker.cpp",
+        "params": "params.h"
+      },
+      "generator": {
+        "kind": "native-small",
+        "takes_size_arg": false,
+        "primary": "small_random.cpp",
+        "alternates": []
+      },
+      "brute_origin": "library-checker: sol/naive.cpp",
+      "checker_kind": "exact-match",
+      "planted_bugs": []
+    },
+    {
+      "name": "vertex_set_path_composite",
+      "input_type": "graph",
+      "subtype": "tree",
+      "source": {
+        "project": "Library Checker",
+        "repo": "https://github.com/yosupo06/library-checker-problems",
+        "commit": "1814c4e5205517e368bb57a8d1127eb961cfeaae",
+        "path": "tree/vertex_set_path_composite",
+        "license": "Apache-2.0"
+      },
+      "files": {
+        "generator": "gen/generator.cpp",
+        "brute": "brute.cpp",
+        "fast_solution": "sol.cpp",
+        "verifier": "verifier.cpp",
+        "checker": "checker.cpp",
+        "params": "params.h"
+      },
+      "generator": {
+        "kind": "native-small",
+        "takes_size_arg": false,
+        "primary": "small.cpp",
+        "alternates": []
+      },
+      "brute_origin": "library-checker: sol/naive.cpp",
+      "checker_kind": "exact-match",
+      "planted_bugs": []
+    }
+  ]
+}
