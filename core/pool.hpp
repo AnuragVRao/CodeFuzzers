@@ -204,6 +204,15 @@ public:
     void dump(std::vector<uint8_t>& map, size_t& n) { map = s.map, n = s.entries.size(); }
 };
 
+// Non-virtual read-out of any pool's bitmap and entry count (call only after workers have joined).
+inline void pool_dump(Pool& p, std::vector<uint8_t>& map, size_t& n) {
+    if (auto* q = dynamic_cast<GlobalLock*>(&p)) return q->dump(map, n);
+    if (auto* q = dynamic_cast<Sharded*>(&p)) return q->dump(map, n);
+    if (auto* q = dynamic_cast<RWLock*>(&p)) return q->dump(map, n);
+    if (auto* q = dynamic_cast<Snapshot*>(&p)) return q->dump(map, n);
+    if (auto* q = dynamic_cast<NoShare*>(&p)) return q->dump(map, n);
+}
+
 inline std::unique_ptr<Pool> make_pool(const std::string& name) {
     if (name == "global") return std::make_unique<GlobalLock>();
     if (name == "sharded") return std::make_unique<Sharded>();

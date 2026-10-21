@@ -2,7 +2,7 @@
 """Builds everything the fuzzer needs into build/, in parallel, skipping up-to-date targets.
 build/fs_runtime.o (no coverage) is linked into every problem binary. Per problem in build/<name>/:
   lightweight (-O2): gen, gen_alt (if variant exists), ref, checker;  path-tracking (-O2 trace-pc,
-  -no-pie): fast_sol, fast_bug.  Also build/smoke, build/pool_bench(_tsan), build/tests/*.
+  -no-pie): fast_sol, fast_bug.  Also smoke, pool_bench(_tsan), fuzzer(_tsan), tests/*.
 Rebuilds when a target is older than its listed deps; --force rebuilds everything.
 """
 import argparse, subprocess
@@ -52,7 +52,9 @@ def tool_targets():
     jobs = [exe(BUILD / "smoke", CORE / "smoke.cpp", ["-O2"], [srv, cmp_]),
             exe(BUILD / "pool_bench", CORE / "pool_bench.cpp", ["-O2", "-pthread"], [pool]),
             exe(BUILD / "pool_bench_tsan", CORE / "pool_bench.cpp", ["-fsanitize=thread", "-g", "-O1", "-pthread"], [pool]),
-            exe(BUILD / "tests/server_test", t / "server_test.cpp", ["-O2"], [srv])]
+            exe(BUILD / "tests/server_test", t / "server_test.cpp", ["-O2"], [srv]),
+            exe(BUILD / "fuzzer", CORE / "fuzzer.cpp", ["-O2", "-pthread"], [srv, pool, cmp_]),
+            exe(BUILD / "fuzzer_tsan", CORE / "fuzzer.cpp", ["-fsanitize=thread", "-g", "-O1", "-pthread"], [srv, pool, cmp_])]
     jobs += [exe(BUILD / "tests" / n, t / f"{n}.cpp", ["-O2"], [], runtime=True) for n in ("crash", "hang", "exit3")]
     return jobs
 
