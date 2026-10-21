@@ -66,6 +66,8 @@ beyond those listed here.
 - "hunt" is exploratory (30 repeats, all hard-tier problems); "hunt-focus" (100 repeats, 8 workers,
   the 3 hard-tier problems with the most tests-to-bug, frozen in results/raw/hunt-focus/focus.json)
   is the confirmatory test with its own Holm family.
+  Confirmatory problems (chosen by rule before data collection, commit date is the
+  record): majority_voting, range_linear_add_range_min, longest_common_substring.
 
 ## Environment
 WSL2 Ubuntu 24.04, 20 logical cores, g++ 13.3, Python 3.12.
