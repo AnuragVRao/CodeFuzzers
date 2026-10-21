@@ -60,6 +60,8 @@ WSL2 Ubuntu 24.04, 20 logical cores, g++ 13.3, Python 3.12.
 ## Working style
 - Small steps. Do only what the current prompt asks; do not start the next step.
 - End every step by running the test command given and showing its real output.
+- tools/build.py only tracks each target's own source (plus fs_runtime.o and core headers for
+  tools). After changing any other header (params.h, common/*.h, problem .hpp) run build.py --force.
 - Do not add dependencies without asking.
 - The repo path contains a space. Always call subprocess with argument lists, never
   shell strings; quote paths in any shell command.

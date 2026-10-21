@@ -26,6 +26,7 @@ struct Server {
     };
     static constexpr size_t MAP_SIZE = 1 << 16;
     unsigned char* cov_map = nullptr;  // non-null only when started with_cov
+    pid_t server_pid() const { return pid; }
 
     Server() = default;
     Server(const Server&) = delete;
