@@ -18,6 +18,8 @@ Formulas (tps = tests_per_sec; medians and quartiles over the repeats of one con
                    with >= 80% power, simulated with geometric tests-to-bug (baseline median = range_add_range_min
                    noshare @ 8 workers, other group median x r), 500 simulations per r
   order_effect   = vs_noshare per strategy for range_add_range_min, K=0, 20 workers: v1 (blocked order) vs new
+  llm            = per model (results/llm/*.json): explain line/category accuracy vs chance (mean 7/lines), median
+                   latency; gen compile counts, mean verifier acceptance, bug rate vs the dataset generator
   hunt_time_scaling = geometric mean over problems of time_median (censored medians skipped and counted)
   pinning ratio  = median(pinned tps) / median(unpinned tps);  shrink speedup = median wall(W=1) / median wall(W)
   mean_size      = median over repeats of the run's average generator size (null for older runs without it)
@@ -185,6 +187,27 @@ def snippet(row, path, key, limit=3000):
         row[f"{key}_truncated"] = True
 
 
+def llm_section(shrink):
+    """Per-model summaries from results/llm/; gallery rows get each model's explanation and marks."""
+    out = {}
+    for f in sorted((R / "llm").glob("explain_*.json")):
+        d = json.loads(f.read_text())
+        s, model = d["summary"], d["summary"]["model"]
+        out.setdefault(model, {})["explain"] = {k: s[k] for k in ("n", "n_explained", "n_too_long", "line_acc",
+                                                                  "category_acc", "chance_line_acc", "median_latency_s")}
+        by_problem = {r["problem"]: r for r in d["problems"]}
+        for row in shrink["gallery"]:
+            r = by_problem.get(row["problem"])
+            if r:
+                row.setdefault("llm", {})[model] = {k: r.get(k) for k in ("status", "line", "category", "explanation",
+                                                                          "fix", "line_ok", "category_ok", "latency_s")}
+    for f in sorted((R / "llm").glob("gen_*.json")):
+        s = json.loads(f.read_text())["summary"]
+        out.setdefault(s["model"], {})["gen"] = {k: s[k] for k in ("n", "compiled_first_try", "compiled_after_repair",
+                                                                   "mean_acceptance", "mean_llm_bug_rate", "mean_dataset_bug_rate")}
+    return out
+
+
 def shrink_section(gallery, scaling):
     groups = {p["name"]: p["group"] for p in problems.load()}
     rows = []
@@ -316,7 +339,7 @@ def main():
                   strategy_colors=STRATEGY_COLORS, headline=headline(scale, pinning, shrink, len(bugs))),
         scale=scale, order_effect=order_effect_section(only("scale-full-v1"), scale_rows),
         hunt=hunt, hunt_tests=tests, hunt_time_scaling=hunt_time_scaling(hunt, hard),
-        power=power_section(base) if base else None, pinning=pinning, shrink=shrink)
+        power=power_section(base) if base else None, pinning=pinning, shrink=shrink, llm=llm_section(shrink))
     (R / "summary.json").write_text(json.dumps(summary, indent=1) + "\n")
     print(f"wrote results/summary.json: {len(summary['scale'])} scale rows, {len(hunt)} hunt rows, "
           f"{len(summary['hunt_tests'])} hunt tests, presets {summary['meta']['preset']}")

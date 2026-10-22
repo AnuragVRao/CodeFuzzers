@@ -7,7 +7,7 @@ const STEPS = [
   ["Control", "Python orchestrator varies workers, strategy, read/write mix and seed; pins cores; repeats every run."],
   ["Timed run", "Workers take a recipe from the shared pool, generate the test, run reference and fast solution, compare, and add recipes that reach new coverage."],
   ["Shrinking", "Parallel generator-space shrinking finds the smallest input that still fails, then re-validates it."],
-  ["Aggregation", "Medians, IQRs and Mann–Whitney tests across workers, strategies and workloads; charts for speed-up, efficiency and time to bug."],
+  ["Aggregation", "Medians, IQRs and Mann–Whitney tests across workers, strategies and workloads; charts for speed-up, efficiency and time to bug. A local LLM (Ollama) explains shrunk failures and drafts generators, outside the timed region."],
 ];
 
 export default function Overview({ data }) {

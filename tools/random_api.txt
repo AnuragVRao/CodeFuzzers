@@ -1,0 +1,31 @@
+random.h API (include with #include "random.h"; all methods are members of struct Random)
+
+Construction
+  Random gen(uint64_t seed);                  deterministic generator (xoshiro256**) seeded via splitmix64
+
+Numbers
+  T gen.uniform<T>(T lower, T upper);         uniform integer in [lower, upper] (both inclusive); lower <= upper
+                                              both arguments must have the same type, e.g. gen.uniform<int>(1, n)
+                                              or gen.uniform(1LL, n_ll)
+  bool gen.uniform_bool();                    true or false with probability 1/2
+  double gen.uniform01();                     uniform real in [0.0, 1.0]
+
+Pairs / intervals
+  std::pair<T, T> gen.uniform_pair<T>(T lower, T upper);
+                                              two DISTINCT values a < b from [lower, upper]; requires upper - lower >= 1.
+                                              uniform_pair(0, n) gives a non-empty half-open interval [a, b) of [0, n)
+
+Strings
+  std::string gen.lower_string(size_t n);     random string of n lowercase letters 'a'..'z'
+
+Sequences
+  void gen.shuffle(Iter first, Iter last);    uniform random shuffle of a range (use instead of std::shuffle)
+  std::vector<T> gen.perm<T>(size_t n);       random permutation of 0, 1, ..., n-1
+  std::vector<T> gen.choice<T>(size_t n, T lower, T upper);
+                                              n distinct values from [lower, upper], returned sorted;
+                                              requires n <= upper - lower + 1
+
+Notes
+  - Use only this generator for randomness so the same seed always gives the same input.
+  - Constants such as N_MAX, Q_MAX, A_MAX come from params.h (#include "params.h"); they are
+    long long macros, so cast when mixing with int, e.g. std::min<long long>(size, N_MAX).

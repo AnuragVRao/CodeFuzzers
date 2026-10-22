@@ -76,10 +76,11 @@ def _run(cmd, inp, out, times, key):
     return rc
 
 
-def run_test(problem, variant, size, seed, fast, times=None):
+def run_test(problem, variant, size, seed, fast, times=None, gen=None):
     """One test -> (outcome, input_text); outcome per CLAUDE.md "Outcome of one test".
     problem: name or load() entry; variant: 0/1; size: int or None (generator default);
-    fast: "sol" or "bug"/"sol_bug"; times: optional dict that receives fast_ms / brute_ms."""
+    fast: "sol" or "bug"/"sol_bug"; times: optional dict that receives fast_ms / brute_ms;
+    gen: optional path of another generator binary (e.g. an LLM-written one) used instead."""
     p = get(problem) if isinstance(problem, str) else problem
     fast = "sol_bug" if fast in ("bug", "sol_bug") else "sol"
     bins = plain_bins(p, fast)
@@ -87,7 +88,7 @@ def run_test(problem, variant, size, seed, fast, times=None):
     base = TMP / uuid.uuid4().hex
     inp, out, ans = (base.with_suffix(x) for x in (".in", ".out", ".ans"))
     try:
-        gen_cmd = [str(bins[p["variants"][variant]]), str(seed)] + ([str(size)] if size is not None else [])
+        gen_cmd = [str(gen or bins[p["variants"][variant]]), str(seed)] + ([str(size)] if size is not None else [])
         with open(inp, "wb") as f:
             try:
                 g = subprocess.run(gen_cmd, stdout=f, stderr=subprocess.DEVNULL, timeout=TIMEOUT).returncode

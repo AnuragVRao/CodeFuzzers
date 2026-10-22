@@ -67,3 +67,8 @@ th { color: var(--navy); font-weight: 600; }
 .toggle { margin-top: 8px; border: 1px solid var(--teal); color: var(--teal); background: #fff; border-radius: 6px;
           padding: 4px 10px; font-size: 13px; cursor: pointer; }
 .toggle:hover { background: #e6f4f4; }
+.llm-strip { display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.llm { margin-top: 10px; border-top: 1px dashed var(--border); padding-top: 8px; font-size: 13px; }
+.llm div { margin: 4px 0; }
+.ok { color: var(--teal); font-weight: 700; }
+.bad { color: #c0392b; font-weight: 700; }
