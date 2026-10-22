@@ -26,6 +26,7 @@ using Clock = std::chrono::steady_clock;
 
 struct Config {
     std::string build, checker = "exact", fast = "sol", mode = "scale", strategy = "global", cpus, out = "fuzz.json", bug_dir = "bug";
+    std::string gen_template = "{seed} {size}";  // generator argv after the program name
     std::string recipes = "guided";  // guided: use picked/mutated recipes; random: pick but ignore
     int max_size = 200, variants = 1, workers = 1, timeout_ms = 2000, extra_ops = 0;
     long long tests = 1000, seed = 1;
@@ -92,6 +93,22 @@ static void record_bug(int w, const Entry& r, const std::string& kind, const std
                                                << r.seed << "\nkind " << kind << "\nworker " << w << "\n";
 }
 
+// {seed}/{size} tokens -> @SEED@/@SIZE@ (see fs_runtime.cpp); false if a token only contains one.
+static bool gen_argv(const std::string& tmpl, std::vector<std::string>& argv) {
+    argv = {"gen"};
+    std::stringstream ss(tmpl);
+    for (std::string t; ss >> t;) {
+        if (t == "{seed}") t = "@SEED@";
+        else if (t == "{size}") t = "@SIZE@";
+        else if (t.find("{seed}") != std::string::npos || t.find("{size}") != std::string::npos) {
+            fprintf(stderr, "--gen-template: token '%s' must be exactly {seed} or {size}, not contain it\n", t.c_str());
+            return false;
+        }
+        argv.push_back(t);
+    }
+    return true;
+}
+
 static void worker(int w, std::vector<int> cpus) {
     if (!cpus.empty()) {  // pin BEFORE spawning servers so they inherit this CPU
         cpu_set_t set;
@@ -104,8 +121,10 @@ static void worker(int w, std::vector<int> cpus) {
     std::string in = dir + "in", out_ref = dir + "out_ref", out_fast = dir + "out_fast";
     bool custom = cfg.checker == "custom";
     Server gen[2], ref, fast, checker;
-    bool ok = gen[0].start(cfg.build + "/gen", {"gen", "0", "0"}, "/dev/null", in, false) &&
-              (cfg.variants < 2 || gen[1].start(cfg.build + "/gen_alt", {"gen", "0", "0"}, "/dev/null", in, false)) &&
+    std::vector<std::string> gargv;
+    gen_argv(cfg.gen_template, gargv);  // validated in main
+    bool ok = gen[0].start(cfg.build + "/gen", gargv, "/dev/null", in, false) &&
+              (cfg.variants < 2 || gen[1].start(cfg.build + "/gen_alt", gargv, "/dev/null", in, false)) &&
               ref.start(cfg.build + "/ref", {"ref"}, in, out_ref, false) &&
               fast.start(cfg.build + (cfg.fast == "sol" ? "/fast_sol" : "/fast_bug"), {"fast"}, in, out_fast, true) &&
               (!custom || checker.start(cfg.build + "/checker", {"checker", in, out_fast, out_ref}, "/dev/null", "/dev/null", false));
@@ -206,6 +225,11 @@ int main(int argc, char** argv) {
     auto D = [&](const char* k, double& v) { if (raw.count(k)) v = std::stod(raw[k]); };
     S("--build", cfg.build), S("--checker", cfg.checker), S("--fast", cfg.fast), S("--mode", cfg.mode);
     S("--recipes", cfg.recipes), S("--strategy", cfg.strategy), S("--cpus", cfg.cpus), S("--out", cfg.out), S("--bug-dir", cfg.bug_dir);
+    S("--gen-template", cfg.gen_template);
+    {
+        std::vector<std::string> tmp;
+        if (!gen_argv(cfg.gen_template, tmp)) return 2;
+    }
     I("--max-size", cfg.max_size), I("--variants", cfg.variants), I("--workers", cfg.workers), I("--tests", cfg.tests);
     I("--seed", cfg.seed), I("--extra-ops", cfg.extra_ops), I("--timeout-ms", cfg.timeout_ms);
     D("--time-limit", cfg.time_limit), D("--write-frac", cfg.write_frac);
@@ -255,10 +279,10 @@ int main(int argc, char** argv) {
     fprintf(f, "{\n  \"config\": {\"build\": \"%s\", \"checker\": \"%s\", \"max_size\": %d, \"variants\": %d, "
                "\"fast\": \"%s\", \"mode\": \"%s\", \"strategy\": \"%s\", \"workers\": %d, \"tests\": %lld, "
                "\"time_limit\": %g, \"seed\": %lld, \"extra_ops\": %d, \"write_frac\": %g, \"cpus\": \"%s\", "
-               "\"timeout_ms\": %d, \"recipes\": \"%s\", \"out\": \"%s\", \"bug_dir\": \"%s\"},\n",
+               "\"timeout_ms\": %d, \"recipes\": \"%s\", \"out\": \"%s\", \"bug_dir\": \"%s\", \"gen_template\": \"%s\"},\n",
             esc(cfg.build).c_str(), cfg.checker.c_str(), cfg.max_size, cfg.variants, cfg.fast.c_str(), cfg.mode.c_str(),
             cfg.strategy.c_str(), cfg.workers, cfg.tests, cfg.time_limit, cfg.seed, cfg.extra_ops, cfg.write_frac,
-            cfg.cpus.c_str(), cfg.timeout_ms, cfg.recipes.c_str(), esc(cfg.out).c_str(), esc(cfg.bug_dir).c_str());
+            cfg.cpus.c_str(), cfg.timeout_ms, cfg.recipes.c_str(), esc(cfg.out).c_str(), esc(cfg.bug_dir).c_str(), esc(cfg.gen_template).c_str());
     fprintf(f, "  \"wall_s\": %.4f, \"tests\": %lld, \"tests_per_sec\": %.1f, \"mean_size\": %.2f,\n", wall,
             tot.tests, tot.tests / wall, tot.tests ? double(tot.size_sum) / tot.tests : 0.0);
     fprintf(f, "  \"outcomes\": {\"ok\": %lld, \"WA\": %lld, \"RE\": %lld, \"TLE\": %lld, \"invalid\": %lld, \"gen_skip\": %lld},\n",

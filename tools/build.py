@@ -57,7 +57,7 @@ def tool_targets():
             exe(BUILD / "tests/server_test", t / "server_test.cpp", ["-O2"], [srv]),
             exe(BUILD / "fuzzer", CORE / "fuzzer.cpp", ["-O2", "-pthread"], [srv, pool, cmp_]),
             exe(BUILD / "fuzzer_tsan", CORE / "fuzzer.cpp", ["-fsanitize=thread", "-g", "-O1", "-pthread"], [srv, pool, cmp_])]
-    jobs += [exe(BUILD / "tests" / n, t / f"{n}.cpp", ["-O2"], [], runtime=True) for n in ("crash", "hang", "exit3")]
+    jobs += [exe(BUILD / "tests" / n, t / f"{n}.cpp", ["-O2"], [], runtime=True) for n in ("crash", "hang", "exit3", "gen_named", "gen_seedonly")]
     return jobs
 
 

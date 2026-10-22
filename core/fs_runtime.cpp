@@ -4,6 +4,11 @@
 // it forks a child that returns from the constructor and runs main(), and reports
 // {wait status, wall-clock µs} on fd 199. trace-pc builds count edge hits (saturating at 255)
 // into the map on fd 197; core/fuzzer.cpp turns the counts into hit-count buckets.
+//
+// Placeholders: the server is started with argv tokens "@SEED@" and/or "@SIZE@" (whole tokens).
+// Per request the child overwrites those argv entries with the request's a1 (seed) / a2 (size),
+// so a generator can take its arguments in any order ("--seed @SEED@ --n @SIZE@"). Without any
+// placeholder the legacy rule applies: argv[1] = a1 and argv[2] = a2.
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -60,14 +65,24 @@ __attribute__((constructor(101))) static void cf_init(int argc, char** argv, cha
         void* p = mmap(nullptr, MAP_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, COV_FD, 0);
         if (p != MAP_FAILED) cov_map = (unsigned char*)p;
     }
+    int idx_seed = 0, idx_size = 0;  // argv index of @SEED@ / @SIZE@ (0 = absent)
+    for (int i = 1; i < argc; i++) {
+        if (!strcmp(argv[i], "@SEED@")) idx_seed = i;
+        if (!strcmp(argv[i], "@SIZE@")) idx_size = i;
+    }
     for (;;) {
         Request rq;
         if (!read_full(REQ_FD, &rq, sizeof rq)) _exit(0);  // client closed the pipe
         long long t0 = now_us();
         pid_t pid = fork();
         if (pid == 0) {  // child: become a normal run of main()
-            if (rq.a1[0] && argc > 1) memcpy(arg1, rq.a1, 31), argv[1] = arg1;
-            if (rq.a2[0] && argc > 2) memcpy(arg2, rq.a2, 31), argv[2] = arg2;
+            if (idx_seed || idx_size) {
+                if (idx_seed) memcpy(arg1, rq.a1, 31), argv[idx_seed] = arg1;
+                if (idx_size && rq.a2[0]) memcpy(arg2, rq.a2, 31), argv[idx_size] = arg2;
+            } else {
+                if (rq.a1[0] && argc > 1) memcpy(arg1, rq.a1, 31), argv[1] = arg1;
+                if (rq.a2[0] && argc > 2) memcpy(arg2, rq.a2, 31), argv[2] = arg2;
+            }
             redirect(getenv("CF_IN"), O_RDONLY, 0);
             redirect(getenv("CF_OUT"), O_WRONLY | O_CREAT | O_TRUNC, 1);
             close(COV_FD), close(REQ_FD), close(REP_FD);

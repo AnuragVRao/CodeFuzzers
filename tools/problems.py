@@ -76,11 +76,28 @@ def _run(cmd, inp, out, times, key):
     return rc
 
 
-def run_test(problem, variant, size, seed, fast, times=None, gen=None):
+def gen_args(template, seed, size):
+    """Fill a generator template; tokens must be exactly {seed}/{size} (size None drops {size})."""
+    out = []
+    for t in template.split():
+        if t == "{seed}":
+            out.append(str(seed))
+        elif t == "{size}":
+            if size is not None:
+                out.append(str(size))
+        elif "{seed}" in t or "{size}" in t:
+            raise ValueError(f"template token {t!r} must be exactly {{seed}} or {{size}}")
+        else:
+            out.append(t)
+    return out
+
+
+def run_test(problem, variant, size, seed, fast, times=None, gen=None, gen_template="{seed} {size}"):
     """One test -> (outcome, input_text); outcome per CLAUDE.md "Outcome of one test".
     problem: name or load() entry; variant: 0/1; size: int or None (generator default);
     fast: "sol" or "bug"/"sol_bug"; times: optional dict that receives fast_ms / brute_ms;
-    gen: optional path of another generator binary (e.g. an LLM-written one) used instead."""
+    gen: optional path of another generator binary (e.g. an LLM-written one) used instead;
+    gen_template: generator arguments, whole tokens {seed} / {size}."""
     p = get(problem) if isinstance(problem, str) else problem
     fast = "sol_bug" if fast in ("bug", "sol_bug") else "sol"
     bins = plain_bins(p, fast)
@@ -88,7 +105,7 @@ def run_test(problem, variant, size, seed, fast, times=None, gen=None):
     base = TMP / uuid.uuid4().hex
     inp, out, ans = (base.with_suffix(x) for x in (".in", ".out", ".ans"))
     try:
-        gen_cmd = [str(gen or bins[p["variants"][variant]]), str(seed)] + ([str(size)] if size is not None else [])
+        gen_cmd = [str(gen or bins[p["variants"][variant]])] + gen_args(gen_template, seed, size)
         with open(inp, "wb") as f:
             try:
                 g = subprocess.run(gen_cmd, stdout=f, stderr=subprocess.DEVNULL, timeout=TIMEOUT).returncode

@@ -157,6 +157,7 @@ to work with. Only qwen3:8b located bugs better than chance.
 - **`-no-pie` coverage builds** — fixed code addresses give the same coverage IDs in every worker and every run.
 - **Hit-count buckets** — with plain edge coverage the map saturated after a handful of tests and the pool stopped growing.
 - **Recipes instead of raw inputs** — mutating (variant, size, seed) always yields a valid input; byte mutation would not.
+- **Generator argument templates (v1.1)** — placeholders are whole argv tokens filled by the fork-server; backward-compatible, verified by cross-check and a paired A/B comparison against the previous build (10 alternating pairs, median ratio 1.002 [CI 0.968–1.035]).
 - **Generator-space shrinking** — delta debugging on bytes breaks format-constrained inputs; shrinking the generator size keeps them valid.
 - **Equal-work random recipes in scale runs** — guided recipes gave each strategy a different input-size mix (mean size 76–84 vs 100), confounding throughput.
 - **Randomised block run order** — with strategies run one after another, slow machine drift made sharing look up to 18% faster than no sharing; interleaving removed it.
