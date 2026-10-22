@@ -5,8 +5,8 @@ Usage: python3 tools/analyze.py <job_dir>
   {"gen_template": "{seed} {size}", "checker": "exact"|"custom", "budget_s": 60|180|600, "workers": 20, "llm_model": "qwen3:8b"}
 Writes progress.jsonl (one event per line: t, stage, status start|done|fail|skip|info, message, data) and report.json
 into <job_dir>; everything else (build/, bug/, shrunk/, tmp/) stays there too. Exit 0 = analysis completed (bug or
-no bug), 1 = a stage failed. The hunt gets budget - elapsed - 15 s (shrink cap) - 3 s (margin), min 10 s, and runs with log-uniform sizes;
-sweep and compare run before it, with uniform sizes capped at SCALE_MAX_SIZE. The LLM runs after the budget.
+no bug), 1 = a stage failed. The hunt gets budget - elapsed - 3 s, min 10 s, and runs with log-uniform sizes; sweep and compare run before it
+(time-boxed to 20% of the budget, max 60 s), with uniform sizes capped at SCALE_MAX_SIZE. The LLM runs after the budget.
 """
 import json, os, shutil, statistics, subprocess, sys, threading, time, urllib.request
 from concurrent.futures import ThreadPoolExecutor
@@ -15,12 +15,14 @@ import llm, problems, shrink
 from run import CPU_ORDER
 
 ROOT, FUZZER, RUNTIME = problems.ROOT, problems.ROOT / "build" / "fuzzer", problems.ROOT / "build" / "fs_runtime.o"
-SHRINK_CAP_S, MARGIN_S = 15, 3  # the hunt leaves this much of the budget for shrinking and slack
+MARGIN_S = 3  # the hunt stops this long before the budget ends
 BUDGET_NOTE = ("The budget covers building, validation, calibration, performance and fuzzing. "
-               "The optional LLM explanation runs afterwards (typically 15–30 s).")
+               "The optional LLM explanation runs afterwards (typically 15–30 s). "
+               "If a bug is found in the last seconds of the hunt, shrinking may exceed the budget by up to ~8 s.")
 PERF_NOTE = "Performance measured at sizes 1–200 (uniform), independent of the hunt's calibrated size range."
 EVAL_NOTE = "in our evaluation, qwen3:8b located 7/29 planted bugs within ±3 lines (chance ≈ 7%)"
 BATTERY_WARNING = "Running on battery: throughput figures can be ~30% lower than when plugged in (measured on this laptop)."
+PAR_EFF = 0.5  # assumed parallel efficiency when sizing sweep runs (measured here: 0.43-0.7 at 8-20 workers)
 CAL_MS, CAL_BYTES, CAL_MAX_EXP = 50, 1_000_000, 20
 SCALE_MAX_SIZE = 200  # sweep / compare measure throughput, not bug finding: keep their tests cheap
 
@@ -96,7 +98,7 @@ def ollama_ok(model):
 def plan(job):
     small = job.budget <= 60
     sweep = [1, job.W] if small else sorted({1, 2, 4, 8, job.W})
-    return dict(budget_s=job.budget, shrink_cap_s=SHRINK_CAP_S, margin_s=MARGIN_S, sweep_workers=[w for w in sweep if w <= job.W] or [1], compare_repeats=2 if small else 3)
+    return dict(budget_s=job.budget, margin_s=MARGIN_S, sweep_workers=[w for w in sweep if w <= job.W] or [1], compare_repeats=2 if small else 3)
 
 
 # ---------------------------------------------------------------- stages
@@ -231,7 +233,8 @@ def do_shrink(job, bundle):
     r = dict(l.split(None, 1) for l in (bug / "recipe.txt").read_text().splitlines() if l.strip())
     recipe = dict(variant=int(r["variant"]), size=int(r["size"]), seed=int(r["seed"]))
     original = (bug / "input.txt").read_text(errors="replace")
-    best, trace, used = shrink.shrink_bundle(bundle, dict(recipe, input=original), job.W, 4000, SHRINK_CAP_S, 7)
+    cap = max(8, min(15, job.budget - (time.time() - job.t0)))  # wall cap for the shrinker
+    best, trace, used = shrink.shrink_bundle(bundle, dict(recipe, input=original), job.W, 4000, cap, 7)
     outcome, ref_out, fast_out = problems.check_text(bundle, best["input"])
     if outcome not in problems.BUGS:  # inputs come from the generator, so only a flaky solution gets here
         job.warnings.append(f"shrunk input did not reproduce the failure ({outcome}); reporting the original")
@@ -254,9 +257,9 @@ def do_shrink(job, bundle):
 def clean_bound(h, max_size):
     n = h["outcomes"]["ok"]
     upper = 1 - 0.05 ** (1 / n) if n else 1.0
-    where = f"sizes 1–{max_size}" if max_size else "the generator's own sizes"
-    return dict(tests=n, upper95=upper, sizes=where,
-                sentence=f"No failing input found in {n} tests. With 95% confidence, fewer than {100 * upper:.2g}% of inputs from this generator ({where}) expose a bug.")
+    where = f", with sizes drawn log-uniformly from 1–{max_size}," if max_size else " at its own sizes"
+    return dict(tests=n, upper95=upper, sizes=where.strip(", "),
+                sentence=f"No failing input found in {n} tests. With 95% confidence, fewer than {100 * upper:.2g}% of inputs from this generator{where} expose a bug.")
 
 
 def run_llm(job, best, ref_s, fast_s):
@@ -282,28 +285,42 @@ def run_llm(job, best, ref_s, fast_s):
                 answer={k: r[k] for k in ("line", "category", "explanation", "fix")})
 
 
-def sweep(job, ws):
+def scale_tests(target_s, rate, w):
+    """Test count for a run of w workers that should take about target_s seconds at rate tests/s."""
+    return min(max(round(target_s * rate), 100 * w), 2000 * w)
+
+
+def probe(job):
+    """1 worker, 200 tests -> mean seconds per test."""
+    h = job.fuzz(job.d / "probe.json", "--mode", "scale", "--strategy", "noshare", "--recipes", "random", "--workers", 1, "--tests", 200,
+                 "--cpus", str(CPU_ORDER[0]), "--seed", 1, timeout=60)
+    return h["wall_s"] / 200
+
+
+def sweep(job, ws, target_s, t1):
     rows = []
     for w in ws:
-        h = job.fuzz(job.d / "sweep.json", "--mode", "scale", "--strategy", "noshare", "--recipes", "random", "--workers", w, "--tests", 1000 * w,
-                     "--cpus", ",".join(map(str, CPU_ORDER[:w])), "--seed", 1, timeout=90)
-        rows.append(dict(workers=w, tests_per_sec=h["tests_per_sec"]))
-        job.ev("sweep", "info", f"{w} workers: {h['tests_per_sec']:.0f} tests/s")
+        n = scale_tests(target_s, w / t1 * (1 if w == 1 else PAR_EFF), w)  # t1 is single-worker: assume w workers reach PAR_EFF of w x
+        h = job.fuzz(job.d / "sweep.json", "--mode", "scale", "--strategy", "noshare", "--recipes", "random", "--workers", w, "--tests", n,
+                     "--cpus", ",".join(map(str, CPU_ORDER[:w])), "--seed", 1, timeout=120)
+        rows.append(dict(workers=w, tests=n, tests_per_sec=h["tests_per_sec"]))
+        job.ev("sweep", "info", f"{w} workers, {n} tests: {h['tests_per_sec']:.0f} tests/s")
     for r in rows:
         r["speedup"] = round(r["tests_per_sec"] / rows[0]["tests_per_sec"], 2)
         r["efficiency"] = round(r["speedup"] / r["workers"], 2)
     return rows
 
 
-def compare(job, repeats):
-    tps = {"noshare": [], "rwlock": []}
+def compare(job, repeats, target_s, t1, sweep_rows):
+    measured = next((r["tests_per_sec"] for r in sweep_rows if r["workers"] == job.W), job.W / t1 * PAR_EFF)  # sweep already ran W workers
+    tps, n = {"noshare": [], "rwlock": []}, scale_tests(target_s, measured, job.W)
     for r in range(repeats):
         for s in (["noshare", "rwlock"] if r % 2 == 0 else ["rwlock", "noshare"]):
-            h = job.fuzz(job.d / "compare.json", "--mode", "scale", "--strategy", s, "--recipes", "random", "--workers", job.W, "--tests", 1000 * job.W,
-                         "--cpus", job.cpus, "--seed", 100 + r, timeout=90)
+            h = job.fuzz(job.d / "compare.json", "--mode", "scale", "--strategy", s, "--recipes", "random", "--workers", job.W, "--tests", n,
+                         "--cpus", job.cpus, "--seed", 100 + r, timeout=120)
             tps[s].append(h["tests_per_sec"])
     med = {s: statistics.median(v) for s, v in tps.items()}
-    return dict(workers=job.W, repeats=repeats, tests_per_sec=tps, median=med, ratio_rwlock_vs_noshare=round(med["rwlock"] / med["noshare"], 3),
+    return dict(workers=job.W, repeats=repeats, tests=n, tests_per_sec=tps, median=med, ratio_rwlock_vs_noshare=round(med["rwlock"] / med["noshare"], 3),
                 note="differences under ~5% are within run-to-run noise")
 
 
@@ -325,11 +342,16 @@ def analyze(job):
     rep["calibration"], bundle["max_size"] = cal, cal["max_size"]
     job.max_size_flag = pl["scale_max_size"] = min(cal["max_size"] or 1, SCALE_MAX_SIZE)
     rep["perf_note"], rep["budget_note"] = PERF_NOTE, BUDGET_NOTE
-    rep["sweep"] = st("sweep", sweep, job, pl["sweep_workers"])
-    rep["compare"] = st("compare", compare, job, pl["compare_repeats"])
+    t1 = st("probe", probe, job)
+    perf = min(0.2 * job.budget, 60)  # seconds for sweep (60%) + compare (40%), split evenly over their runs
+    rep["perf"] = dict(t1_s_per_test=t1, perf_budget_s=perf)
+    rep["sweep"] = st("sweep", sweep, job, pl["sweep_workers"], 0.6 * perf / len(pl["sweep_workers"]), t1)
+    rep["compare"] = st("compare", compare, job, pl["compare_repeats"], 0.4 * perf / (2 * pl["compare_repeats"]), t1, rep["sweep"])
+    rep["perf"].update(sweep_tests=[r["tests"] for r in rep["sweep"]], compare_tests=rep["compare"]["tests"],
+                       perf_s=round(sum(job.durations[k] for k in ("probe", "sweep", "compare")), 2))
 
     job.max_size_flag = cal["max_size"] or 1
-    budget = max(10, job.budget - (time.time() - job.t0) - SHRINK_CAP_S - MARGIN_S)
+    budget = max(10, job.budget - (time.time() - job.t0) - MARGIN_S)
     pl["hunt_budget_s"] = round(budget, 1)
     h = st("hunt", hunt, job, budget)
     rep["hunt"] = dict(tests=h["tests"], tests_per_sec=h["tests_per_sec"], outcomes=h["outcomes"], cov_features=h["cov_features"], first_bug=h.get("first_bug"))
