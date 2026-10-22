@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
-"""Per-upload analysis pipeline: build -> validate -> calibrate -> hunt -> shrink | clean bound -> llm -> sweep -> compare.
+"""Per-upload analysis pipeline: build -> validate -> calibrate -> sweep -> compare -> hunt -> shrink | clean bound -> llm (outside the budget).
 Usage: python3 tools/analyze.py <job_dir>
 <job_dir> holds gen.cpp, ref.cpp, sol.cpp, optional checker.cpp and config.json:
   {"gen_template": "{seed} {size}", "checker": "exact"|"custom", "budget_s": 60|180|600, "workers": 20, "llm_model": "qwen3:8b"}
 Writes progress.jsonl (one event per line: t, stage, status start|done|fail|skip|info, message, data) and report.json
 into <job_dir>; everything else (build/, bug/, shrunk/, tmp/) stays there too. Exit 0 = analysis completed (bug or
-no bug), 1 = a stage failed. The time plan is fixed at the start: the hunt gets budget - elapsed - reserves (min 10 s);
-time a stage does not use is not handed to another stage. Sweep and compare cap sizes at SCALE_MAX_SIZE
-so they fit their reserves.
+no bug), 1 = a stage failed. The hunt gets budget - elapsed - 15 s (shrink cap) - 3 s (margin), min 10 s, and runs with log-uniform sizes;
+sweep and compare run before it, with uniform sizes capped at SCALE_MAX_SIZE. The LLM runs after the budget.
 """
 import json, os, shutil, statistics, subprocess, sys, threading, time, urllib.request
 from concurrent.futures import ThreadPoolExecutor
@@ -16,7 +15,10 @@ import llm, problems, shrink
 from run import CPU_ORDER
 
 ROOT, FUZZER, RUNTIME = problems.ROOT, problems.ROOT / "build" / "fuzzer", problems.ROOT / "build" / "fs_runtime.o"
-RESERVES = dict(shrink=20, llm=30, sweep=20, compare=15)
+SHRINK_CAP_S, MARGIN_S = 15, 3  # the hunt leaves this much of the budget for shrinking and slack
+BUDGET_NOTE = ("The budget covers building, validation, calibration, performance and fuzzing. "
+               "The optional LLM explanation runs afterwards (typically 15–30 s).")
+PERF_NOTE = "Performance measured at sizes 1–200 (uniform), independent of the hunt's calibrated size range."
 EVAL_NOTE = "in our evaluation, qwen3:8b located 7/29 planted bugs within ±3 lines (chance ≈ 7%)"
 BATTERY_WARNING = "Running on battery: throughput figures can be ~30% lower than when plugged in (measured on this laptop)."
 CAL_MS, CAL_BYTES, CAL_MAX_EXP = 50, 1_000_000, 20
@@ -91,11 +93,10 @@ def ollama_ok(model):
         return False
 
 
-def plan(job, llm_up):
+def plan(job):
     small = job.budget <= 60
     sweep = [1, job.W] if small else sorted({1, 2, 4, 8, job.W})
-    return dict(budget_s=job.budget, reserves=dict(RESERVES, llm=RESERVES["llm"] if llm_up else 0),
-                sweep_workers=[w for w in sweep if w <= job.W] or [1], compare_repeats=2 if small else 3)
+    return dict(budget_s=job.budget, shrink_cap_s=SHRINK_CAP_S, margin_s=MARGIN_S, sweep_workers=[w for w in sweep if w <= job.W] or [1], compare_repeats=2 if small else 3)
 
 
 # ---------------------------------------------------------------- stages
@@ -202,7 +203,7 @@ def calibrate(job, bundle, mode):
 
 def hunt(job, budget):
     out, t0 = job.d / "hunt.json", time.time()
-    cmd = job.fuzz_cmd(out, "--mode", "hunt", "--strategy", "rwlock", "--recipes", "guided", "--workers", job.W, "--cpus", job.cpus,
+    cmd = job.fuzz_cmd(out, "--mode", "hunt", "--strategy", "rwlock", "--recipes", "guided", "--size-dist", "log", "--workers", job.W, "--cpus", job.cpus,
                        "--time-limit", budget, "--bug-dir", job.d / "bug")
     p = subprocess.Popen(cmd, stderr=subprocess.PIPE, text=True)
     while True:
@@ -230,7 +231,7 @@ def do_shrink(job, bundle):
     r = dict(l.split(None, 1) for l in (bug / "recipe.txt").read_text().splitlines() if l.strip())
     recipe = dict(variant=int(r["variant"]), size=int(r["size"]), seed=int(r["seed"]))
     original = (bug / "input.txt").read_text(errors="replace")
-    best, trace, used = shrink.shrink_bundle(bundle, dict(recipe, input=original), job.W, 4000, RESERVES["shrink"], 7)
+    best, trace, used = shrink.shrink_bundle(bundle, dict(recipe, input=original), job.W, 4000, SHRINK_CAP_S, 7)
     outcome, ref_out, fast_out = problems.check_text(bundle, best["input"])
     if outcome not in problems.BUGS:  # inputs come from the generator, so only a flaky solution gets here
         job.warnings.append(f"shrunk input did not reproduce the failure ({outcome}); reporting the original")
@@ -259,7 +260,7 @@ def clean_bound(h, max_size):
 
 
 def run_llm(job, best, ref_s, fast_s):
-    """-> (result or None, skip reason). The model gets 60 s; a late answer is dropped."""
+    """The model gets 60 s; a late answer is dropped. Returns the result block, or None with an info event why."""
     box = {}
 
     def work():
@@ -271,22 +272,21 @@ def run_llm(job, best, ref_s, fast_s):
     t = threading.Thread(target=work, daemon=True)
     t.start()
     t.join(60)
-    if t.is_alive():
-        return None, "model did not answer within 60 s"
-    if "err" in box:
-        return None, f"Ollama error: {box['err'][:200]}"
-    r = box["r"]
-    if r["status"] != "ok":
-        return None, f"no usable answer ({r['status']})"
+    r = box.get("r")
+    why = "model did not answer within 60 s" if t.is_alive() else f"Ollama error: {box['err'][:200]}" if "err" in box \
+        else f"no usable answer ({r['status']})" if r["status"] != "ok" else None
+    if why:
+        job.ev("llm", "info", why)
+        return None
     return dict(model=job.model, label="unverified suggestion", latency_s=r["latency_s"], evaluation_note=EVAL_NOTE,
-                answer={k: r[k] for k in ("line", "category", "explanation", "fix")}), None
+                answer={k: r[k] for k in ("line", "category", "explanation", "fix")})
 
 
 def sweep(job, ws):
     rows = []
     for w in ws:
         h = job.fuzz(job.d / "sweep.json", "--mode", "scale", "--strategy", "noshare", "--recipes", "random", "--workers", w, "--tests", 1000 * w,
-                     "--cpus", ",".join(map(str, CPU_ORDER[:w])), "--seed", 1, timeout=RESERVES["sweep"] * 3 + 30)
+                     "--cpus", ",".join(map(str, CPU_ORDER[:w])), "--seed", 1, timeout=90)
         rows.append(dict(workers=w, tests_per_sec=h["tests_per_sec"]))
         job.ev("sweep", "info", f"{w} workers: {h['tests_per_sec']:.0f} tests/s")
     for r in rows:
@@ -300,7 +300,7 @@ def compare(job, repeats):
     for r in range(repeats):
         for s in (["noshare", "rwlock"] if r % 2 == 0 else ["rwlock", "noshare"]):
             h = job.fuzz(job.d / "compare.json", "--mode", "scale", "--strategy", s, "--recipes", "random", "--workers", job.W, "--tests", 1000 * job.W,
-                         "--cpus", job.cpus, "--seed", 100 + r, timeout=RESERVES["compare"] * 3 + 30)
+                         "--cpus", job.cpus, "--seed", 100 + r, timeout=90)
             tps[s].append(h["tests_per_sec"])
     med = {s: statistics.median(v) for s, v in tps.items()}
     return dict(workers=job.W, repeats=repeats, tests_per_sec=tps, median=med, ratio_rwlock_vs_noshare=round(med["rwlock"] / med["noshare"], 3),
@@ -315,7 +315,7 @@ def analyze(job):
     if env["power"] == "battery":
         job.warnings.append(BATTERY_WARNING)
     llm_up = ollama_ok(job.model)
-    rep["plan"] = pl = plan(job, llm_up)
+    rep["plan"] = pl = plan(job)
     problems.TMP = job.d / "tmp"
 
     bundle = st("build", build, job)
@@ -323,27 +323,26 @@ def analyze(job):
     rep["mode"] = dict(v, gen_template=job.template)
     cal = st("calibrate", calibrate, job, bundle, v["mode"])
     rep["calibration"], bundle["max_size"] = cal, cal["max_size"]
-    job.max_size_flag = cal["max_size"] or 1
+    job.max_size_flag = pl["scale_max_size"] = min(cal["max_size"] or 1, SCALE_MAX_SIZE)
+    rep["perf_note"], rep["budget_note"] = PERF_NOTE, BUDGET_NOTE
+    rep["sweep"] = st("sweep", sweep, job, pl["sweep_workers"])
+    rep["compare"] = st("compare", compare, job, pl["compare_repeats"])
 
-    budget = max(10, job.budget - (time.time() - job.t0) - sum(pl["reserves"].values()))
+    job.max_size_flag = cal["max_size"] or 1
+    budget = max(10, job.budget - (time.time() - job.t0) - SHRINK_CAP_S - MARGIN_S)
     pl["hunt_budget_s"] = round(budget, 1)
     h = st("hunt", hunt, job, budget)
     rep["hunt"] = dict(tests=h["tests"], tests_per_sec=h["tests_per_sec"], outcomes=h["outcomes"], cov_features=h["cov_features"], first_bug=h.get("first_bug"))
+    rep["budget_used_s"] = round(time.time() - job.t0, 2)  # everything counted against the budget except the LLM below
     if h.get("first_bug"):
         rep["bug"], best, ref_s, fast_s = st("shrink", do_shrink, job, bundle)
-        if llm_up:
-            job.ev("llm", "start")
-            rep["llm"], why = run_llm(job, best, ref_s, fast_s)
-            job.ev("llm", "done" if rep["llm"] else "skip", why or "")
-        else:
-            rep["llm"] = None
+        rep["budget_used_s"] = round(time.time() - job.t0, 2)
+        rep["llm"] = st("llm", run_llm, job, best, ref_s, fast_s) if llm_up else None
+        if not llm_up:
             job.ev("llm", "skip", f"Ollama or model {job.model} not available")
     else:
         rep["clean_bound"] = st("clean", clean_bound, h, cal["max_size"])
         job.ev("clean", "info", rep["clean_bound"]["sentence"])
-    job.max_size_flag = pl["scale_max_size"] = min(job.max_size_flag, SCALE_MAX_SIZE)
-    rep["sweep"] = st("sweep", sweep, job, pl["sweep_workers"])
-    rep["compare"] = st("compare", compare, job, pl["compare_repeats"])
 
 
 def main():

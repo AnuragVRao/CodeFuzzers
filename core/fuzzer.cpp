@@ -27,6 +27,7 @@ using Clock = std::chrono::steady_clock;
 struct Config {
     std::string build, checker = "exact", fast = "sol", mode = "scale", strategy = "global", cpus, out = "fuzz.json", bug_dir = "bug";
     std::string gen_template = "{seed} {size}";  // generator argv after the program name
+    std::string size_dist = "uniform";  // sizes of random recipes: uniform on 1..max_size, or log-uniform
     std::string recipes = "guided";  // guided: use picked/mutated recipes; random: pick but ignore
     int max_size = 200, variants = 1, workers = 1, timeout_ms = 2000, extra_ops = 0;
     long long tests = 1000, seed = 1;
@@ -158,7 +159,12 @@ static void worker(int w, std::vector<int> cpus) {
             r.size = uint16_t(std::min<double>(std::max<double>(s, 1), cfg.max_size));
         } else {
             r.variant = uint8_t(rng() % cfg.variants);
-            r.size = uint16_t(1 + rng() % cfg.max_size);
+            if (cfg.size_dist == "log") {  // size = clamp(round(exp(U ln max)), 1, max), U in [0, 1)
+                double u = (rng() >> 11) * (1.0 / 9007199254740992.0);
+                r.size = uint16_t(std::min<double>(std::max<double>(std::llround(std::exp(u * std::log(double(cfg.max_size)))), 1), cfg.max_size));
+            } else {
+                r.size = uint16_t(1 + rng() % cfg.max_size);
+            }
         }
         r.seed = rng() >> 1, r.hits = 0;
         st.tests++, st.size_sum += r.size;
@@ -225,7 +231,7 @@ int main(int argc, char** argv) {
     auto D = [&](const char* k, double& v) { if (raw.count(k)) v = std::stod(raw[k]); };
     S("--build", cfg.build), S("--checker", cfg.checker), S("--fast", cfg.fast), S("--mode", cfg.mode);
     S("--recipes", cfg.recipes), S("--strategy", cfg.strategy), S("--cpus", cfg.cpus), S("--out", cfg.out), S("--bug-dir", cfg.bug_dir);
-    S("--gen-template", cfg.gen_template);
+    S("--gen-template", cfg.gen_template), S("--size-dist", cfg.size_dist);
     {
         std::vector<std::string> tmp;
         if (!gen_argv(cfg.gen_template, tmp)) return 2;
@@ -233,6 +239,7 @@ int main(int argc, char** argv) {
     I("--max-size", cfg.max_size), I("--variants", cfg.variants), I("--workers", cfg.workers), I("--tests", cfg.tests);
     I("--seed", cfg.seed), I("--extra-ops", cfg.extra_ops), I("--timeout-ms", cfg.timeout_ms);
     D("--time-limit", cfg.time_limit), D("--write-frac", cfg.write_frac);
+    if (cfg.size_dist != "uniform" && cfg.size_dist != "log") { fprintf(stderr, "--size-dist uniform|log\n"); return 2; }
     if (cfg.recipes != "guided" && cfg.recipes != "random") { fprintf(stderr, "--recipes guided|random\n"); return 2; }
     if (cfg.strategy != "random" && !make_pool(cfg.strategy)) { fprintf(stderr, "unknown strategy %s\n", cfg.strategy.c_str()); return 2; }
     std::vector<int> cpus;
@@ -279,10 +286,10 @@ int main(int argc, char** argv) {
     fprintf(f, "{\n  \"config\": {\"build\": \"%s\", \"checker\": \"%s\", \"max_size\": %d, \"variants\": %d, "
                "\"fast\": \"%s\", \"mode\": \"%s\", \"strategy\": \"%s\", \"workers\": %d, \"tests\": %lld, "
                "\"time_limit\": %g, \"seed\": %lld, \"extra_ops\": %d, \"write_frac\": %g, \"cpus\": \"%s\", "
-               "\"timeout_ms\": %d, \"recipes\": \"%s\", \"out\": \"%s\", \"bug_dir\": \"%s\", \"gen_template\": \"%s\"},\n",
+               "\"timeout_ms\": %d, \"recipes\": \"%s\", \"out\": \"%s\", \"bug_dir\": \"%s\", \"gen_template\": \"%s\", \"size_dist\": \"%s\"},\n",
             esc(cfg.build).c_str(), cfg.checker.c_str(), cfg.max_size, cfg.variants, cfg.fast.c_str(), cfg.mode.c_str(),
             cfg.strategy.c_str(), cfg.workers, cfg.tests, cfg.time_limit, cfg.seed, cfg.extra_ops, cfg.write_frac,
-            cfg.cpus.c_str(), cfg.timeout_ms, cfg.recipes.c_str(), esc(cfg.out).c_str(), esc(cfg.bug_dir).c_str(), esc(cfg.gen_template).c_str());
+            cfg.cpus.c_str(), cfg.timeout_ms, cfg.recipes.c_str(), esc(cfg.out).c_str(), esc(cfg.bug_dir).c_str(), esc(cfg.gen_template).c_str(), cfg.size_dist.c_str());
     fprintf(f, "  \"wall_s\": %.4f, \"tests\": %lld, \"tests_per_sec\": %.1f, \"mean_size\": %.2f,\n", wall,
             tot.tests, tot.tests / wall, tot.tests ? double(tot.size_sum) / tot.tests : 0.0);
     fprintf(f, "  \"outcomes\": {\"ok\": %lld, \"WA\": %lld, \"RE\": %lld, \"TLE\": %lld, \"invalid\": %lld, \"gen_skip\": %lld},\n",
