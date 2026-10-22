@@ -28,22 +28,20 @@ def hard_problems():
 
 
 TESTS_PER_WORKER = 2500  # weak scaling: total tests = 2500 x workers
-FOCUS_FILE = RAW / "hunt-focus" / "focus.json"
+# Pre-declared before data collection (see the 'Pre-declare hunt-focus problems' commit). The selection rule
+# was: the 3 hard-tier problems with the largest median tests-to-bug at 8 workers in the first full hunt.
+FOCUS_PROBLEMS = ["majority_voting", "range_linear_add_range_min", "longest_common_substring"]
+FOCUS_FILE = RAW / "hunt-focus" / "focus.json"  # written as a record of what a hunt-focus run used
 
 
-def focus_problems(write=False):
-    """The 3 hard-tier problems with the largest tests_to_bug_median at 8 workers (median over the three
-    strategies) in the current summary.json. Frozen in FOCUS_FILE once the experiment starts."""
+def record_focus():
+    """Write FOCUS_FILE (record only); warn if an existing record disagrees with FOCUS_PROBLEMS."""
     if FOCUS_FILE.exists():
-        return json.loads(FOCUS_FILE.read_text())
-    hard, _ = hard_problems()
-    hunt = json.loads((ROOT / "results" / "summary.json").read_text())["hunt"]
-    score = {p: sorted(r["tests_to_bug_median"] for r in hunt if r["problem"] == p and r["workers"] == 8)[1] for p in hard}
-    focus = sorted(hard, key=lambda p: -score[p])[:3]
-    if write:
-        FOCUS_FILE.parent.mkdir(parents=True, exist_ok=True)
-        FOCUS_FILE.write_text(json.dumps(focus) + "\n")
-    return focus
+        if json.loads(FOCUS_FILE.read_text()) != FOCUS_PROBLEMS:
+            print(f"warning: {FOCUS_FILE} disagrees with FOCUS_PROBLEMS {FOCUS_PROBLEMS}")
+        return
+    FOCUS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    FOCUS_FILE.write_text(json.dumps(FOCUS_PROBLEMS) + "\n")
 
 
 def plan(exp, preset):
@@ -69,7 +67,7 @@ def plan(exp, preset):
         if not full:
             raise SystemExit("hunt-focus has only a full preset")
         reps = 100
-        confs = [conf(p, s, 8, limit=20) for p in focus_problems() for s in ["random", "noshare", "rwlock"]]
+        confs = [conf(p, s, 8, limit=20) for p in FOCUS_PROBLEMS for s in ["random", "noshare", "rwlock"]]
     elif exp == "pinning":
         reps = 5
         confs = [conf("range_add_range_min", "global", 8, mode="scale", tests=20000, pin=pin) for pin in (1, 0)]
@@ -143,7 +141,9 @@ def main():
     commit, dirty = git_info()
     _, bugs = hard_problems()
     if a.exp == "hunt-focus":
-        print("hunt-focus problems:", focus_problems(write=not a.dry_run))
+        print("hunt-focus problems (pre-declared):", FOCUS_PROBLEMS)
+        if not a.dry_run:
+            record_focus()
     runs = plan(a.exp, a.preset)
     exp_dir = a.exp + ("-quick" if a.preset == "quick" else "")
     todo = [r for r in runs if not out_path(exp_dir, r).exists()]

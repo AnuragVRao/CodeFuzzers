@@ -83,8 +83,8 @@ beyond those listed here.
   Machine drift therefore cannot line up with one strategy.
 - Scale = weak scaling: tests = 2500 x workers; speed-up = throughput ratio (tests/s vs noshare @ 1).
 - "hunt" is exploratory (30 repeats, all hard-tier problems); "hunt-focus" (100 repeats, 8 workers,
-  the 3 hard-tier problems with the most tests-to-bug, frozen in results/raw/hunt-focus/focus.json)
-  is the confirmatory test with its own Holm family.
+  the 3 hard-tier problems with the most tests-to-bug; constant FOCUS_PROBLEMS in tools/run.py,
+  recorded in results/raw/hunt-focus/focus.json) is the confirmatory test with its own Holm family.
   Confirmatory problems (chosen by rule before data collection, commit date is the
   record): majority_voting, range_linear_add_range_min, longest_common_substring.
 - Statistics (tools/aggregate.py docstring has every formula): medians + IQR; censored hunts

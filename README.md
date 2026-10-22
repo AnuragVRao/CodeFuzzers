@@ -88,7 +88,6 @@ Prepare the laptop first:
 python3 tools/build.py && tools/selftest.sh
 nohup bash -c '
   python3 tools/run.py --exp hunt --preset full &&          # ~8 min, 2970 runs (exploratory)
-  python3 tools/flatten.py && python3 tools/aggregate.py && # hunt-focus picks its problems from this
   python3 tools/run.py --exp hunt-focus --preset full &&    # ~3 min, 900 runs (confirmatory)
   python3 tools/run.py --exp scale --preset full &&         # ~80 min, 1800 runs
   python3 tools/run.py --exp pinning --preset full          # ~1 min, 10 runs
@@ -109,8 +108,8 @@ python3 tools/results_table.py
 ```
 
 `run.py --dry-run` prints the plan and an ETA. Runs are resumable: finished result files are
-skipped. Check that `results/raw/hunt-focus/focus.json` lists the three pre-declared problems
-(`CLAUDE.md`).
+skipped. The confirmatory problems are the constant `FOCUS_PROBLEMS` in `tools/run.py`, fixed before
+data collection; each hunt-focus run records them in `results/raw/hunt-focus/focus.json`.
 
 ## Key results
 
