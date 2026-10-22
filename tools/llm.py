@@ -74,12 +74,40 @@ def first_diff(ref, fast):
     return f"first differing token is token #{i + 1} (1-based, whitespace-separated): expected {get(r)!r}, got {get(f)!r}"
 
 
+EXPLAIN_SCHEMA = {"type": "object", "required": ["line", "category", "explanation", "fix"], "properties": {
+    "line": {"type": "integer"}, "category": {"type": "string", "enum": CATEGORIES},
+    "explanation": {"type": "string"}, "fix": {"type": "string"}}}
+
+
+def explain_one(code_text, input_text, ref_out, fast_out, model, name=None):
+    """Ask the model to locate the bug in code_text (plain source, numbered here). Returns a dict:
+    status ok|too_long|bad_json, prompt, n_lines, prompt_tokens_est, and for ok/bad_json the chat stats plus
+    line, category, explanation, fix (bad_json: raw)."""
+    lines = code_text.splitlines()
+    code = "\n".join(f"{i}| {l}" for i, l in enumerate(lines, 1))
+    what = f'for the competitive-programming problem "{name}"' if name else "for a competitive-programming problem"
+    prompt = (f"The C++ solution below {what} contains exactly one bug.\n"
+              f"It produces a wrong answer on the input shown. Find the bug.\n\n"
+              f"Solution (each line is prefixed with its line number and '| '):\n{code}\n\n"
+              f"Input:\n{input_text}\nExpected output (correct reference):\n{ref_out}\nActual output (this solution):\n{fast_out}\n"
+              f"Where they differ: {first_diff(ref_out, fast_out)}.\n\n"
+              f"Answer in JSON: line = the line number of the bug, category = one of {CATEGORIES}, "
+              f"explanation = 2-4 sentences, fix = one line of corrected code.")
+    row = dict(prompt=prompt, n_lines=len(lines), prompt_tokens_est=round(len(prompt) / CHARS_PER_TOKEN))
+    if len(prompt) / CHARS_PER_TOKEN > MAX_TOKENS:
+        return dict(row, status="too_long")
+    content, stats = chat(model, prompt, EXPLAIN_SCHEMA)
+    try:
+        a = json.loads(content)
+        return dict(row, status="ok", **stats, line=a["line"], category=a["category"],
+                    explanation=a["explanation"], fix=a["fix"])
+    except (ValueError, KeyError):
+        return dict(row, status="bad_json", **stats, raw=content[:2000])
+
+
 def explain(model):
     bugs = {b["problem"]: b for b in json.loads((problems.DATASET / "bugs.json").read_text())}
     gallery = json.loads((ROOT / "results" / "bugs" / "gallery.json").read_text())
-    schema = {"type": "object", "required": ["line", "category", "explanation", "fix"], "properties": {
-        "line": {"type": "integer"}, "category": {"type": "string", "enum": CATEGORIES},
-        "explanation": {"type": "string"}, "fix": {"type": "string"}}}
     rows = []
     for g in gallery:
         name = g["problem"]  # only the name is used from the gallery row
@@ -87,30 +115,14 @@ def explain(model):
         lines, blanked = blank_new_comments((p["dir"] / "sol.cpp").read_text(), (p["dir"] / "sol_bug.cpp").read_text())
         shrunk = ROOT / "results" / "bugs" / name / "shrunk"
         inp, ref, fast = ((shrunk / f).read_text() for f in ("input.txt", "ref_out.txt", "fast_out.txt"))
-        code = "\n".join(f"{i}| {l}" for i, l in enumerate(lines, 1))
-        prompt = (f"The C++ solution below for the competitive-programming problem \"{name}\" contains exactly one bug.\n"
-                  f"It produces a wrong answer on the input shown. Find the bug.\n\n"
-                  f"Solution (each line is prefixed with its line number and '| '):\n{code}\n\n"
-                  f"Input:\n{inp}\nExpected output (correct reference):\n{ref}\nActual output (this solution):\n{fast}\n"
-                  f"Where they differ: {first_diff(ref, fast)}.\n\n"
-                  f"Answer in JSON: line = the line number of the bug, category = one of {CATEGORIES}, "
-                  f"explanation = 2-4 sentences, fix = one line of corrected code.")
-        save_prompt(model, f"explain_{name}", prompt)
         true = bugs[name]
-        row = dict(problem=name, true_line=true["line"], true_category=true["category"], comments_blanked=blanked,
-                   n_lines=len(lines), prompt_tokens_est=round(len(prompt) / CHARS_PER_TOKEN))
-        if len(prompt) / CHARS_PER_TOKEN > MAX_TOKENS:
-            rows.append(dict(row, status="too_long"))
-        else:
-            content, stats = chat(model, prompt, schema)
-            try:
-                a = json.loads(content)
-                rows.append(dict(row, status="ok", **stats, line=a["line"], category=a["category"],
-                                 explanation=a["explanation"], fix=a["fix"],
-                                 line_ok=abs(a["line"] - true["line"]) <= 3, category_ok=a["category"] == true["category"]))
-            except (ValueError, KeyError):
-                rows.append(dict(row, status="bad_json", **stats, raw=content[:2000]))
-        r = rows[-1]
+        r = explain_one("\n".join(lines), inp, ref, fast, model, name)
+        save_prompt(model, f"explain_{name}", r.pop("prompt"))
+        row = dict(problem=name, true_line=true["line"], true_category=true["category"], comments_blanked=blanked, **r)
+        if r["status"] == "ok":
+            row.update(line_ok=abs(r["line"] - true["line"]) <= 3, category_ok=r["category"] == true["category"])
+        rows.append(row)
+        r = row
         print(f"{name:42} blanked={blanked} {r['status']:8} line {r.get('line', '-')!s:>4} (true {true['line']:>4}) "
               f"{'✓' if r.get('line_ok') else '✗'}  cat {r.get('category', '-'):10} {'✓' if r.get('category_ok') else '✗'}  "
               f"{r.get('latency_s', 0):5.1f}s", flush=True)

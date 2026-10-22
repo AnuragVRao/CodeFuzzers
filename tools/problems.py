@@ -1,8 +1,10 @@
-"""Problem list from Dataset/manifest.json, a cached g++ helper, and run_test(): one plain
-(non-fork-server) test gen -> brute -> fast -> compare, shared by sanity.py and shrink.py.
-Plain binaries live in build/plain/<problem>/ and are compiled on first use.
+"""Problem list from Dataset/manifest.json, a cached g++ helper, and run_test_bundle(): one plain
+(non-fork-server) test gen -> ref -> fast -> compare, shared by sanity.py, shrink.py and analyze.py.
+A bundle is a dict {gen, ref, fast, checker (path or None), checker_kind ("exact"|"custom"),
+gen_template, max_size, build_dir}; bundle_for_problem() makes one from the dataset, tools/analyze.py
+makes one from an upload. Dataset plain binaries live in build/plain/<problem>/, compiled on first use.
 """
-import json, subprocess, threading, time, uuid
+import functools, json, subprocess, threading, time, uuid
 from collections import defaultdict
 from pathlib import Path
 
@@ -92,40 +94,79 @@ def gen_args(template, seed, size):
     return out
 
 
-def run_test(problem, variant, size, seed, fast, times=None, gen=None, gen_template="{seed} {size}"):
-    """One test -> (outcome, input_text); outcome per CLAUDE.md "Outcome of one test".
-    problem: name or load() entry; variant: 0/1; size: int or None (generator default);
-    fast: "sol" or "bug"/"sol_bug"; times: optional dict that receives fast_ms / brute_ms;
-    gen: optional path of another generator binary (e.g. an LLM-written one) used instead;
-    gen_template: generator arguments, whole tokens {seed} / {size}."""
+@functools.lru_cache(maxsize=None)
+def max_sizes():
+    return json.loads((ROOT / "fuzz_config.json").read_text())
+
+
+def bundle_for_problem(problem, fast="sol", variant=0):
+    """Bundle of a dataset problem (name or load() entry); fast: "sol" or "bug"/"sol_bug"."""
     p = get(problem) if isinstance(problem, str) else problem
     fast = "sol_bug" if fast in ("bug", "sol_bug") else "sol"
     bins = plain_bins(p, fast)
+    custom = p["checker_kind"] == "custom"
+    max_size = max_sizes()[p["name"]]["max_size"]
+    return dict(gen=str(bins[p["variants"][variant]]), ref=str(bins["brute"]), fast=str(bins[fast]),
+                checker=str(bins["checker"]) if custom else None, checker_kind="custom" if custom else "exact",
+                gen_template="{seed} {size}", max_size=max_size, build_dir=str(PLAIN / p["name"]))
+
+
+def _judge(b, inp, out, ans, times):
+    """ref and fast on file inp (outputs to ans / out), then compare -> outcome (not gen_skip)."""
+    if _run([b["ref"]], inp, ans, times, "brute_ms") != 0:
+        return "invalid"
+    rf = _run([b["fast"]], inp, out, times, "fast_ms")
+    if rf is None:
+        return "TLE"
+    if rf != 0:
+        return "RE"
+    if b["checker_kind"] == "custom":
+        same = subprocess.run([b["checker"], str(inp), str(out), str(ans)], capture_output=True).returncode == 0
+    else:
+        same = out.read_bytes().split() == ans.read_bytes().split()
+    return "ok" if same else "WA"
+
+
+def _temp_files():
     TMP.mkdir(parents=True, exist_ok=True)
     base = TMP / uuid.uuid4().hex
-    inp, out, ans = (base.with_suffix(x) for x in (".in", ".out", ".ans"))
+    return [base.with_suffix(x) for x in (".in", ".out", ".ans")]
+
+
+def run_test_bundle(bundle, size, seed, times=None):
+    """One test -> (outcome, input_text); outcome per CLAUDE.md "Outcome of one test".
+    size: int or None (dropped from the template); times: optional dict that receives fast_ms / brute_ms."""
+    inp, out, ans = _temp_files()
     try:
-        gen_cmd = [str(gen or bins[p["variants"][variant]])] + gen_args(gen_template, seed, size)
         with open(inp, "wb") as f:
             try:
-                g = subprocess.run(gen_cmd, stdout=f, stderr=subprocess.DEVNULL, timeout=TIMEOUT).returncode
+                g = subprocess.run([bundle["gen"], *gen_args(bundle["gen_template"], seed, size)], stdout=f,
+                                   stderr=subprocess.DEVNULL, timeout=TIMEOUT).returncode
             except subprocess.TimeoutExpired:
                 g = None
         if g != 0:
             return "gen_skip", ""
-        text = inp.read_text(errors="replace")
-        if _run([str(bins["brute"])], inp, ans, times, "brute_ms") != 0:
-            return "invalid", text
-        rf = _run([str(bins[fast])], inp, out, times, "fast_ms")
-        if rf is None:
-            return "TLE", text
-        if rf != 0:
-            return "RE", text
-        if p["checker_kind"] == "custom":
-            same = subprocess.run([str(bins["checker"]), str(inp), str(out), str(ans)], capture_output=True).returncode == 0
-        else:
-            same = out.read_bytes().split() == ans.read_bytes().split()
-        return ("ok" if same else "WA"), text
+        return _judge(bundle, inp, out, ans, times), inp.read_text(errors="replace")
     finally:
         for f in (inp, out, ans):
             f.unlink(missing_ok=True)
+
+
+def check_text(bundle, text):
+    """Run ref and fast on a given input text -> (outcome, ref_out bytes, fast_out bytes)."""
+    inp, out, ans = _temp_files()
+    try:
+        inp.write_text(text)
+        outcome = _judge(bundle, inp, out, ans, None)
+        return outcome, (ans.read_bytes() if ans.exists() else b""), (out.read_bytes() if out.exists() else b"")
+    finally:
+        for f in (inp, out, ans):
+            f.unlink(missing_ok=True)
+
+
+def run_test(problem, variant, size, seed, fast, times=None, gen=None, gen_template="{seed} {size}"):
+    """Thin wrapper over run_test_bundle for a dataset problem (name or load() entry); variant: 0/1;
+    gen: optional path of another generator binary (e.g. an LLM-written one) used instead;
+    gen_template: generator arguments, whole tokens {seed} / {size}."""
+    b = bundle_for_problem(problem, fast, variant)
+    return run_test_bundle(dict(b, gen=str(gen or b["gen"]), gen_template=gen_template), size, seed, times)

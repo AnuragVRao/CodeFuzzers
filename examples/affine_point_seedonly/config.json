@@ -1,0 +1,7 @@
+{
+ "gen_template": "{seed}",
+ "checker": "exact",
+ "budget_s": 60,
+ "workers": 20,
+ "llm_model": "qwen3:8b"
+}

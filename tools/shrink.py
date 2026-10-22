@@ -15,9 +15,9 @@ POOL = ProcessPoolExecutor  # evaluator pool (one per shrink, reused every round
 
 
 def evaluate(job):
-    """(problem, candidate) -> candidate + outcome + input. Top-level so a process pool can pickle it."""
-    name, c = job
-    outcome, text = problems.run_test(name, c["variant"], c["size"], c["seed"], "bug")
+    """(bundle, candidate) -> candidate + outcome + input. Top-level so a process pool can pickle it."""
+    bundle, c = job
+    outcome, text = problems.run_test_bundle(bundle, c["size"], c["seed"])
     return dict(c, outcome=outcome, input=text)
 
 
@@ -30,37 +30,55 @@ def stats(text):
     return dict(bytes=len(text.encode()), lines=len(text.splitlines()))
 
 
-def shrink(name, recipe, input_text, workers, budget, seed):
-    rng = random.Random(seed)
-    best = dict(recipe, input=input_text)
-    trace, used, rnd, stale = [[0, best["size"]]], 0, 0, 0
+def nbytes(r):
+    return len(r["input"].encode())
 
-    def best_of(results):
-        """Failing result with the smallest (size, bytes), earliest candidate on ties."""
-        failing = [r for r in results if r["outcome"] in problems.BUGS]
-        return min(failing, key=lambda r: (r["size"], len(r["input"].encode())), default=None)
+
+def best_of(results, key):
+    """Failing result with the smallest key, earliest candidate on ties."""
+    failing = [r for r in results if r["outcome"] in problems.BUGS]
+    return min(failing, key=key, default=None)
+
+
+def shrink_bundle(bundle, recipe, workers, budget_tests, wall_limit_s, seed):
+    """Smaller failing recipe for a bundle -> (best, trace, tests_used). recipe: variant, size, seed and
+    optionally the failing input text (regenerated otherwise). Sized generators: shrink the size.
+    Seed-only generators (template without {size}): batches of fresh seeds, keep the failing input with
+    the fewest bytes. Results are processed in candidate order, so the outcome is identical for any W
+    (unless wall_limit_s cuts a run short)."""
+    rng, t0 = random.Random(seed), time.time()
+    sized = "{size}" in bundle["gen_template"].split()
+    text = recipe.get("input")
+    if text is None:
+        text = problems.run_test_bundle(bundle, recipe["size"] if sized else None, recipe["seed"])[1]
+    best = dict(recipe, input=text)
+    measure = (lambda r: r["size"]) if sized else nbytes
+    trace, used, rnd, stale = [[0, measure(best)]], 0, 0, 0
+    key = lambda r: (r["size"], nbytes(r)) if sized else nbytes(r)
 
     with POOL(workers) as ex:
-        while best["size"] > 1 and stale < PATIENCE and used < budget:
+        while (not sized or best["size"] > 1) and stale < PATIENCE and used < budget_tests and time.time() - t0 < wall_limit_s:
             rnd += 1
-            m = best["size"] - 1
-            cands = [dict(variant=best["variant"], size=min(m, int(math.exp(rng.uniform(0, math.log(m + 1))))),
-                          seed=rng.randrange(1, 2**63)) for _ in range(min(BATCH, budget - used))]
-            results = list(ex.map(evaluate, [(name, c) for c in cands]))  # map() keeps candidate order
+            m = best["size"] - 1 if sized else 0
+            n = min(BATCH, budget_tests - used)
+            cands = [dict(variant=best["variant"],  # size first, then seed: the historical draw order
+                          size=min(m, int(math.exp(rng.uniform(0, math.log(m + 1))))) if sized else None,
+                          seed=rng.randrange(1, 2**63)) for _ in range(n)]
+            results = list(ex.map(evaluate, [(bundle, c) for c in cands]))  # map() keeps candidate order
             used += len(cands)
-            found = best_of(results)
-            if found:
+            found = best_of(results, key)
+            if found and (sized or nbytes(found) < nbytes(best)):
                 best, stale = found, 0
             else:
                 stale += 1
-            trace.append([rnd, best["size"]])
-        # polish: more seeds at the final size, keep the failing input with the fewest bytes
-        cands = [dict(variant=best["variant"], size=best["size"], seed=rng.randrange(1, 2**63)) for _ in range(BATCH)]
-        results = list(ex.map(evaluate, [(name, c) for c in cands]))
-        used += len(cands)
-        found = best_of(results)
-        if found and len(found["input"].encode()) < len(best["input"].encode()):
-            best = found
+            trace.append([rnd, measure(best)])
+        if sized:  # polish: more seeds at the final size, keep the failing input with the fewest bytes
+            cands = [dict(variant=best["variant"], size=best["size"], seed=rng.randrange(1, 2**63)) for _ in range(BATCH)]
+            results = list(ex.map(evaluate, [(bundle, c) for c in cands]))
+            used += len(cands)
+            found = best_of(results, key)
+            if found and nbytes(found) < nbytes(best):
+                best = found
     return best, trace, used
 
 
@@ -76,7 +94,8 @@ def main():
     recipe = read_recipe(a.bug_dir / "recipe.txt")
     original = (a.bug_dir / "input.txt").read_text(errors="replace")
     t0 = time.time()
-    best, trace, used = shrink(a.problem, recipe, original, a.workers, a.budget, a.seed)
+    bundle = problems.bundle_for_problem(a.problem, "bug", recipe["variant"])
+    best, trace, used = shrink_bundle(bundle, dict(recipe, input=original), a.workers, a.budget, float("inf"), a.seed)
     wall = time.time() - t0
 
     out = a.bug_dir / "shrunk"

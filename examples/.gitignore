@@ -1,0 +1,9 @@
+build/
+bug/
+shrunk/
+tmp/
+hunt.json
+sweep.json
+compare.json
+report.json
+progress.jsonl
