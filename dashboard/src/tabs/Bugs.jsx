@@ -89,8 +89,9 @@ export default function Bugs({ data }) {
             const located = Math.round(e.line_acc * e.n_explained), cat = Math.round(e.category_acc * e.n_explained);
             return (
               <div key={m}>
-                <b>{m}</b>: located {located}/{e.n_explained} bugs within ±3 lines (chance: {pct(e.chance_line_acc)}) ·
-                category {cat}/{e.n_explained}{e.n_too_long ? ` · ${e.n_too_long} too long` : ""}
+                <b>{m}</b>: located {located}/{e.n_explained} bugs within ±3 lines (chance: {pct(e.chance_line_acc)},
+                p = {fmt(e.line_p, 3)}) · category {cat}/{e.n_explained} (majority baseline “{e.majority_category}”:
+                {" "}{pct(e.majority_share)}, p = {fmt(e.category_p, 3)}){e.n_too_long ? ` · ${e.n_too_long} too long` : ""}
               </div>
             );
           })}

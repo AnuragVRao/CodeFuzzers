@@ -8,7 +8,7 @@ that file exists (resumable); quick presets use <exp>-quick. Run r uses --seed 1
 to the i-th CPU of CPU_ORDER. Scale = weak scaling (tests = 2500 x workers, --recipes random); hunt,
 hunt-focus and pinning use guided recipes.
 """
-import argparse, json, os, random, subprocess, sys, time
+import argparse, json, os, random, subprocess, time
 from pathlib import Path
 import problems
 
@@ -32,13 +32,13 @@ FOCUS_FILE = RAW / "hunt-focus" / "focus.json"
 
 
 def focus_problems(write=False):
-    """The 3 hard-tier problems with the largest tests_median at 8 workers (median over the three
+    """The 3 hard-tier problems with the largest tests_to_bug_median at 8 workers (median over the three
     strategies) in the current summary.json. Frozen in FOCUS_FILE once the experiment starts."""
     if FOCUS_FILE.exists():
         return json.loads(FOCUS_FILE.read_text())
     hard, _ = hard_problems()
     hunt = json.loads((ROOT / "results" / "summary.json").read_text())["hunt"]
-    score = {p: sorted(r["tests_median"] for r in hunt if r["problem"] == p and r["workers"] == 8)[1] for p in hard}
+    score = {p: sorted(r["tests_to_bug_median"] for r in hunt if r["problem"] == p and r["workers"] == 8)[1] for p in hard}
     focus = sorted(hard, key=lambda p: -score[p])[:3]
     if write:
         FOCUS_FILE.parent.mkdir(parents=True, exist_ok=True)

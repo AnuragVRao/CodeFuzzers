@@ -9,6 +9,7 @@ Formulas (tps = tests_per_sec; medians and quartiles over the repeats of one con
   efficiency_abs = speedup_abs / workers
   vs_noshare     = tps_median / tps_median(noshare, same problem/K/F/workers)
   predicted_tps  = min(noshare tps_median at this W, pool_bench tests_per_sec at this strategy/K/F/threads)
+  tests_to_bug   = bug_tests_before + 1 (the failing test is counted, so always >= 1)
   hunt censoring = a run without a bug counts as +inf tests/time; a quantile touching +inf -> null + flag
   hunt_tests     = two-sided Mann-Whitney U on tests-to-bug (censored = +inf); p_holm = Holm within a family:
                    "exploratory" (hunt) and "confirmatory" (hunt-focus)
@@ -20,6 +21,9 @@ Formulas (tps = tests_per_sec; medians and quartiles over the repeats of one con
   order_effect   = vs_noshare per strategy for range_add_range_min, K=0, 20 workers: v1 (blocked order) vs new
   llm            = per model (results/llm/*.json): explain line/category accuracy vs chance (mean 7/lines), median
                    latency; gen compile counts, mean verifier acceptance, bug rate vs the dataset generator
+  line_p         = one-sided exact Poisson-binomial P(hits >= observed) with p_i = min(1, 7 / lines of file i)
+  category_p     = one-sided binomial P(hits >= observed | n, share of the most frequent true category)
+  meta.commits   = commits of the runs behind the displayed sections (scale, pinning, hunt, hunt-focus)
   hunt_time_scaling = geometric mean over problems of time_median (censored medians skipped and counted)
   pinning ratio  = median(pinned tps) / median(unpinned tps);  shrink speedup = median wall(W=1) / median wall(W)
   mean_size      = median over repeats of the run's average generator size (null for older runs without it)
@@ -32,7 +36,7 @@ import csv, json, math, sys, warnings
 from collections import defaultdict
 from datetime import datetime, timezone
 import numpy as np
-from scipy.stats import mannwhitneyu
+from scipy.stats import binom, mannwhitneyu
 import problems
 from style import STRATEGY_COLORS
 
@@ -105,7 +109,7 @@ def hunt_values(rows):
     for r in rows:
         found = r["bug_found"] == "1"
         t, s = g[(r["problem"], r["strategy"], int(r["workers"]))]
-        t.append(float(r["bug_tests_before"]) if found else INF)
+        t.append(float(r["bug_tests_before"]) + 1 if found else INF)  # tests_to_bug counts the failing test
         s.append(float(r["bug_time_s"]) if found else INF)
     return g
 
@@ -113,7 +117,7 @@ def hunt_values(rows):
 def hunt_section(g, kinds):
     return [dict(problem=p, strategy=s, workers=w, n=len(t), found=sum(map(math.isfinite, t)),
                  censored=sum(not math.isfinite(x) for x in t), kind=kinds.get(p),
-                 **qstats(t, "tests"), **qstats(tm, "time"), values=[num(x) for x in t])
+                 **qstats(t, "tests_to_bug"), **qstats(tm, "time"), values=[num(x) for x in t])
             for (p, s, w), (t, tm) in sorted(g.items())]
 
 
@@ -187,14 +191,37 @@ def snippet(row, path, key, limit=3000):
         row[f"{key}_truncated"] = True
 
 
+def poisson_binomial_sf(k, ps):
+    """P(X >= k) for X = sum of independent Bernoulli(p_i): exact, by convolving the distributions."""
+    dist = np.array([1.0])
+    for p in ps:
+        dist = np.convolve(dist, [1 - p, p])
+    return float(dist[k:].sum())
+
+
+def explain_stats(rows):
+    """Line hits vs per-problem chance (Poisson-binomial) and category hits vs the majority-class share
+    (binomial), both one-sided, over the explained problems."""
+    ok = [r for r in rows if r["status"] == "ok"]
+    hits, cat_hits = sum(r["line_ok"] for r in ok), sum(r["category_ok"] for r in ok)
+    cats = [r["true_category"] for r in ok]
+    top = max(cats.count(c) for c in cats)
+    majority = " / ".join(sorted(c for c in set(cats) if cats.count(c) == top))  # ties listed, sorted
+    share = top / len(ok)
+    return dict(line_hits=hits, line_p=num(poisson_binomial_sf(hits, [min(1, 7 / r["n_lines"]) for r in ok])),
+                category_hits=cat_hits, majority_category=majority, majority_share=num(share),
+                category_p=num(float(binom.sf(cat_hits - 1, len(ok), share))))
+
+
 def llm_section(shrink):
     """Per-model summaries from results/llm/; gallery rows get each model's explanation and marks."""
     out = {}
     for f in sorted((R / "llm").glob("explain_*.json")):
         d = json.loads(f.read_text())
         s, model = d["summary"], d["summary"]["model"]
-        out.setdefault(model, {})["explain"] = {k: s[k] for k in ("n", "n_explained", "n_too_long", "line_acc",
-                                                                  "category_acc", "chance_line_acc", "median_latency_s")}
+        out.setdefault(model, {})["explain"] = {**{k: s[k] for k in ("n", "n_explained", "n_too_long", "line_acc",
+                                                                     "category_acc", "chance_line_acc", "median_latency_s")},
+                                                **explain_stats(d["problems"])}
         by_problem = {r["problem"]: r for r in d["problems"]}
         for row in shrink["gallery"]:
             r = by_problem.get(row["problem"])
@@ -283,11 +310,11 @@ def selftest():
         rows = [dict(problem="p", strategy="s", workers="8", bug_found="0" if i < censored else "1",
                      bug_tests_before=str(100 + i), bug_time_s=str(1 + i)) for i in range(30)]
         h = hunt_section(hunt_values(rows), {})[0]
-        good = (h["tests_median"] is None and h.get("tests_median_censored") is True) if want_null \
-            else (h["tests_median"] is not None and "tests_median_censored" not in h)
+        good = (h["tests_to_bug_median"] is None and h.get("tests_to_bug_median_censored") is True) if want_null \
+            else (h["tests_to_bug_median"] is not None and "tests_to_bug_median_censored" not in h)
         ok &= good
-        print(f"case {case}: 30 runs, {censored} censored -> tests_median={h['tests_median']}, "
-              f"censored_flag={h.get('tests_median_censored', False)}: {'PASS' if good else 'FAIL'}")
+        print(f"case {case}: 30 runs, {censored} censored -> tests_to_bug_median={h['tests_to_bug_median']}, "
+              f"censored_flag={h.get('tests_to_bug_median_censored', False)}: {'PASS' if good else 'FAIL'}")
     return 0 if ok else 1
 
 
@@ -295,18 +322,11 @@ def main():
     if "--selftest" in sys.argv:
         return selftest()
     if "--power" in sys.argv:
-        base = next(r["tests_median"] for r in json.loads((R / "summary.json").read_text())["hunt"]
+        base = next(r["tests_to_bug_median"] for r in json.loads((R / "summary.json").read_text())["hunt"]
                     if (r["problem"], r["strategy"], r["workers"]) == ("range_add_range_min", "noshare", 8))
         print(json.dumps(power_section(base), indent=1))
         return 0
     runs = read_csv(R / "runs.csv")
-    commits = sorted({r.get("git_commit") or "unknown" for r in runs})
-    if len(commits) > 1:
-        print(f"warning: runs.csv mixes code versions: commits {commits}", file=sys.stderr)
-    if "unknown" in commits:
-        print("warning: some runs have no git commit recorded (made before run.py stamped it)", file=sys.stderr)
-    if any(r.get("git_dirty") == "1" for r in runs):
-        print("warning: some runs were made from a dirty working tree", file=sys.stderr)
 
     bugs = json.loads((problems.DATASET / "bugs.json").read_text())
     kinds = {b["problem"]: b["kind"] for b in bugs}
@@ -315,6 +335,14 @@ def main():
     scale_rows, pin_rows = only("scale"), only("pinning")  # randomised design only; v1 kept out
     scale_preset, pin_preset = ("full" if scale_rows else "none"), ("full" if pin_rows else "none")
     hunt_rows_raw, hunt_preset = section(runs, "hunt")
+    used = scale_rows + pin_rows + hunt_rows_raw + only("hunt-focus")  # runs behind the displayed sections
+    commits = sorted({r.get("git_commit") or "unknown" for r in used})
+    if len(commits) > 1:
+        print(f"warning: the summarised runs mix code versions: commits {commits}", file=sys.stderr)
+    if "unknown" in commits:
+        print("warning: some summarised runs have no git commit recorded", file=sys.stderr)
+    if any(r.get("git_dirty") == "1" for r in used):
+        print("warning: some summarised runs were made from a dirty working tree", file=sys.stderr)
     gallery_path = R / "bugs" / "gallery.json"
     gallery = json.loads(gallery_path.read_text()) if gallery_path.exists() else []
 
@@ -325,7 +353,7 @@ def main():
         rows = [t for t in tests if t["family"] == fam]
         for row, ph in zip(rows, holm([t["p_raw"] for t in rows])):
             row["p_holm"] = num(ph)
-    base = next((r["tests_median"] for r in hunt if (r["problem"], r["strategy"], r["workers"]) == ("range_add_range_min", "noshare", 8)), None)
+    base = next((r["tests_to_bug_median"] for r in hunt if (r["problem"], r["strategy"], r["workers"]) == ("range_add_range_min", "noshare", 8)), None)
     counts = defaultdict(int)
     for r in runs:
         counts[r["experiment"]] += 1

@@ -30,8 +30,9 @@ export default function Hunt({ data }) {
   const ws = uniq(mine.map((r) => r.workers)).sort((a, b) => a - b);
   const w = ws.includes(Number(workers)) ? Number(workers) : ws[0];
   const sel = ORDER.map((s) => mine.find((r) => r.strategy === s && r.workers === w)).filter(Boolean);
-  const pos = (v) => Math.max(v, 0.5); // tests_before can be 0; keep it on the log axis
-  const plotted = sel.flatMap((r) => [...r.values.filter((v) => v != null), r.tests_q1, r.tests_q3].filter((v) => v != null).map(pos));
+  const pos = (v) => Math.max(v, 1); // tests_to_bug is always >= 1
+  const plotted = sel.flatMap((r) => [...r.values.filter((v) => v != null), r.tests_to_bug_q1, r.tests_to_bug_q3]
+    .filter((v) => v != null).map(pos));
   const lo = Math.min(...plotted, 1) / 2;
   const hi = Math.max(...plotted, 1) * 2;
   const top = hi / 1.4; // where censored runs are drawn
@@ -60,19 +61,19 @@ export default function Hunt({ data }) {
               tickFormatter={(i) => sel[i]?.strategy ?? ""} label={{ value: "strategy", position: "insideBottom", offset: -15 }} />
             <YAxis type="number" dataKey="y" scale="log" domain={[lo, hi]} ticks={logTicks(lo, hi)} allowDataOverflow
               tickFormatter={(v) => fmt(v, 1)} width={80}
-              label={{ value: "tests before bug (log)", angle: -90, position: "insideLeft", style: { textAnchor: "middle" } }} />
+              label={{ value: "tests until first bug (incl. the failing one)", angle: -90, position: "insideLeft", style: { textAnchor: "middle" } }} />
             <Tooltip formatter={(v, n) => (n === "y" ? fmt(v, 0) : null)} />
             <Legend verticalAlign="top" />
             {sel.map((r, i) => (
               <Scatter key={r.strategy} name={r.strategy} fill={colorOf(data.meta, r.strategy)} isAnimationActive={false}
                 data={r.values.map((v, k) => (v == null ? null : { x: i + jitter(k), y: pos(v) })).filter(Boolean)} />
             ))}
-            {sel.map((r, i) => r.tests_q1 != null && r.tests_q3 != null && (
-              <ReferenceLine key={`iqr${i}`} segment={[{ x: i, y: pos(r.tests_q1) }, { x: i, y: pos(r.tests_q3) }]}
+            {sel.map((r, i) => r.tests_to_bug_q1 != null && r.tests_to_bug_q3 != null && (
+              <ReferenceLine key={`iqr${i}`} segment={[{ x: i, y: pos(r.tests_to_bug_q1) }, { x: i, y: pos(r.tests_to_bug_q3) }]}
                 stroke="#333" strokeWidth={2} />
             ))}
-            {sel.map((r, i) => r.tests_median != null && (
-              <ReferenceLine key={`med${i}`} segment={[{ x: i - 0.28, y: pos(r.tests_median) }, { x: i + 0.28, y: pos(r.tests_median) }]}
+            {sel.map((r, i) => r.tests_to_bug_median != null && (
+              <ReferenceLine key={`med${i}`} segment={[{ x: i - 0.28, y: pos(r.tests_to_bug_median) }, { x: i + 0.28, y: pos(r.tests_to_bug_median) }]}
                 stroke="#111" strokeWidth={3} />
             ))}
             <Scatter name="censored (no bug before time limit)" shape="cross" fill="#C0392B" isAnimationActive={false}

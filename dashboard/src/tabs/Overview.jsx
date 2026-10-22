@@ -16,7 +16,10 @@ export default function Overview({ data }) {
   const h = m.headline;
   const cards = [
     [h.speedup_20_rwlock_k0 ? `${fmt(h.speedup_20_rwlock_k0, 1)}×` : "—", "speed-up at 20 workers (rwlock, realistic workload)",
-      `hardware ceiling (no sharing): ${h.speedup_20_noshare_k0 ? `${fmt(h.speedup_20_noshare_k0, 1)}×` : "—"}`],
+      `hardware ceiling (no sharing): ${h.speedup_20_noshare_k0 ? `${fmt(h.speedup_20_noshare_k0, 1)}×` : "—"}` +
+        (h.speedup_20_rwlock_k0 && h.speedup_20_noshare_k0 &&
+         Math.abs(h.speedup_20_rwlock_k0 - h.speedup_20_noshare_k0) / h.speedup_20_noshare_k0 < 0.05
+          ? " — difference within run-to-run noise" : "")],
     [h.pinning_ratio ? `+${fmt((h.pinning_ratio - 1) * 100, 0)}%` : "—", "throughput gain from CPU pinning (8 workers)"],
     [`${h.bugs_found}/${h.bugs_total}`, "planted bugs found, shrunk and re-validated"],
     [h.median_shrink_bytes_ratio != null ? `−${fmt((1 - h.median_shrink_bytes_ratio) * 100, 0)}%` : "—", "median input size reduction by the shrinker"],

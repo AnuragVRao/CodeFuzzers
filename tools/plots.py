@@ -4,7 +4,7 @@ per-run values from results/runs.csv). Strategy colours come from tools/style.py
 Charts: scale speed-up / efficiency / predicted-vs-measured per problem, hunt tests-to-bug boxes
 at 8 workers, hunt time scaling, pinning, shrinker scaling. Usage: python3 tools/plots.py
 """
-import csv, json, math
+import csv, json
 from collections import defaultdict
 import matplotlib
 matplotlib.use("Agg")
@@ -81,11 +81,11 @@ def hunt_box(experiment, hard):
     if not probs:
         return
     fig, ax = plt.subplots(figsize=(max(6, 2.2 * len(probs)), 4.5))
-    top = max([float(r["bug_tests_before"]) for r in rows if r["bug_found"] == "1"] + [1]) * 3
+    top = max([float(r["bug_tests_before"]) + 1 for r in rows if r["bug_found"] == "1"] + [1]) * 3
     for i, p in enumerate(probs):
         for j, s in enumerate(strats):
             rs = [r for r in rows if r["problem"] == p and r["strategy"] == s]
-            vals = [max(float(r["bug_tests_before"]), 0.5) for r in rs if r["bug_found"] == "1"]
+            vals = [float(r["bug_tests_before"]) + 1 for r in rs if r["bug_found"] == "1"]  # tests_to_bug
             pos = i * 4 + j
             if vals:
                 b = ax.boxplot([vals], positions=[pos], widths=0.7, patch_artist=True)
@@ -100,7 +100,7 @@ def hunt_box(experiment, hard):
     ax.set_xticks([i * 4 + 1 for i in range(len(probs))], probs, rotation=15, fontsize=8)
     ax.set_title(f"Tests until first bug, 8 workers ({experiment})")
     ax.set_xlabel("problem (hard tier)")
-    ax.set_ylabel("tests before first bug (log scale)")
+    ax.set_ylabel("tests until first bug (incl. the failing one, log)")
     ax.legend(fontsize=8)
     save(fig, "hunt_tests_to_bug_w8.png")
 

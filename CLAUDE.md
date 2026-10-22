@@ -6,14 +6,31 @@ beyond those listed here.
 ## Layout
 - Dataset/problems/<group>/<name>/  dataset; groups: arrays, graphs, strings.
   Shared headers in Dataset/common/. Problem list comes from Dataset/manifest.json.
-  (never modify unless explicitly asked)
+  (never modify unless explicitly asked; generators got a size knob, sol_bug.cpp was added)
 - fuzz_config.json  per-problem settings: {"<problem>": {"max_size": N}}
-- core/             C++17: fuzzer binary (worker threads, shared pool, 5 lock
-                    strategies) and the forkserver + coverage runtime
-- tools/            Python 3.12 scripts: build.py, run.py, shrink.py, aggregate.py, llm.py
-- build/            compiled binaries (gitignored)
-- results/          run outputs (gitignored)
-- dashboard/        Vite + React + Recharts, reads results/summary.json, no backend
+- requirements.txt  numpy, scipy, matplotlib (pinned); nothing else for Python
+- core/             C++17, header-light:
+    fs_runtime.cpp  fork-server + trace-pc coverage runtime linked into every binary
+    server.hpp      client side (posix_spawn, pipes, memfd coverage map)
+    pool.hpp        Pool interface + 5 strategies (global, sharded, rwlock, snapshot, noshare)
+    fuzzer.cpp      the multi-threaded fuzzer (scale / hunt), JSON summary
+    pool_bench.cpp  pool-only micro-benchmark and --check; smoke.cpp single-threaded e2e test
+    compare.hpp     token comparison; tests/ fork-server edge-case binaries + server_test
+- tools/            Python 3.12 (stdlib + requirements.txt):
+    build.py        builds everything into build/ (--force after header changes)
+    run.py          experiment orchestrator (randomised blocks, resumable, git-stamped)
+    flatten.py -> aggregate.py -> plots.py   raw JSON -> runs.csv -> summary.json -> charts
+    results_table.py  README key-results table from summary.json
+    sanity.py       plain gen/brute/fast check; tier_bugs.py measures planted-bug rates
+    shrink.py, shrink_scaling.py, bug_gallery.py, repro.py   shrinking and bug gallery
+    llm.py          Ollama explain/gen (random_api.txt is part of the gen prompt)
+    problems.py     shared helpers (manifest, compile, run_test); style.py strategy colours
+    selftest.sh     build + all self-tests, PASS/FAIL per item
+- build/            compiled binaries (gitignored); build/plain/ = plain binaries for Python tools
+- results/          run outputs (gitignored): raw/<experiment>/, runs.csv, summary.json, charts/,
+                    bugs/ (gallery), llm/ (answers + prompts)
+- dashboard/        Vite + React + Recharts, reads results/summary.json, no backend;
+                    Node 22 (.nvmrc) via nvm: `source ~/.nvm/nvm.sh` before npm
 
 ## Dataset conventions
 - reference = brute.cpp, fast = sol.cpp (later: sol_bug.cpp with a planted bug)
@@ -30,6 +47,7 @@ beyond those listed here.
   * fast times out                    → bug, kind "TLE"
   * both exit 0, outputs disagree     → bug, kind "WA"
 - Sizes are always clamped to max_size from fuzz_config.json.
+- tests_to_bug = number of tests up to and including the first failing one (always >= 1).
 - Dataset/bugs.json: one planted bug per problem with measured "rate" (% at sizes 5/20/max),
   "tier" (hard = all rates <= 15 %) and "kind"; regenerate with tools/tier_bugs.py.
   Note: suffixarray and number_of_substrings carry the same bug (shared SA-IS code).
@@ -43,6 +61,7 @@ beyond those listed here.
 - Solutions run through a fork-server: each binary is linked with a runtime that
   forks before main() on request. Each worker thread owns its OWN server processes
   and talks to them via pipes. Worker threads themselves NEVER call fork().
+- Coverage binaries are built with -no-pie so coverage IDs (hashed PCs) are stable across runs.
 - Coverage: g++ -fsanitize-coverage=trace-pc; runtime hashes (prev_pc, pc) into a
   64 KiB map of saturating edge hit counts in shared memory. Coverage = edge hit-count
   buckets (AFL-style {1},{2},{3},{4-7},{8-15},{16-31},{32-127},{128+}); the pool bitmap
@@ -68,15 +87,24 @@ beyond those listed here.
   is the confirmatory test with its own Holm family.
   Confirmatory problems (chosen by rule before data collection, commit date is the
   record): majority_voting, range_linear_add_range_min, longest_common_substring.
+- Statistics (tools/aggregate.py docstring has every formula): medians + IQR; censored hunts
+  count as +inf; Mann-Whitney U with Holm correction per family; bootstrap CI of median ratios;
+  simulated minimum detectable effect; LLM hits vs exact Poisson-binomial / binomial baselines.
+- Workers are pinned to CPUs in the order 0,2,4,...,18,1,3,...,19 (one hyper-thread per core first).
+- LLM layer (tools/llm.py): local Ollama at $OLLAMA_URL (default http://localhost:11434),
+  outside the timed region. Prompts must never contain Dataset/bugs.json, sol.cpp or the
+  gallery's description/trigger/category; changed comments in sol_bug.cpp are blanked.
 
 ## Environment
-WSL2 Ubuntu 24.04, 20 logical cores, g++ 13.3, Python 3.12.
+WSL2 Ubuntu 24.04 (mirrored networking for Ollama on Windows), i7-13650HX (6P+8E cores,
+20 logical CPUs), g++ 13.3, Python 3.12, Node 22.
 
 ## Working style
 - Small steps. Do only what the current prompt asks; do not start the next step.
 - End every step by running the test command given and showing its real output.
+- tools/selftest.sh must pass before committing.
 - tools/build.py only tracks each target's own source (plus fs_runtime.o and core headers for
   tools). After changing any other header (params.h, common/*.h, problem .hpp) run build.py --force.
-- Do not add dependencies without asking.
+- Do not add dependencies without asking (Python: requirements.txt; JS: dashboard/package.json).
 - The repo path contains a space. Always call subprocess with argument lists, never
   shell strings; quote paths in any shell command.
