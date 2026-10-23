@@ -40,10 +40,12 @@ function LlmCard({ id, llm }) {
     fetch(`/api/jobs/${id}/files/sol.cpp`).then((r) => r.text()).then((t) => setLines(t.split("\n"))).catch(() => {});
   }, [id]);
   const { line, category, explanation, fix } = llm.answer;
+  const unreliable = line < 1 || (lines.length > 1 && line > lines.length) || (lines.length > 1 && /^[\s\p{P}\p{S}]*$/u.test(lines[line - 1] ?? ""));
   const from = Math.max(1, line - 5), shown = lines.slice(from - 1, line + 5);
   return (
     <Card title={`Unverified suggestion (${llm.model})`}>
       <div>Suggested line <b>{line}</b> · category <b>{category}</b></div>
+      {unreliable && <div className="bad">The suggested line number looks unreliable.</div>}
       <p>{explanation}</p>
       <pre className="mono">{fix}</pre>
       {shown.length > 0 && (
@@ -63,7 +65,7 @@ function Chart({ data, x, lines, log, mark, ticks }) {
         <YAxis scale={log ? "log" : "auto"} domain={log ? [0.1, "auto"] : [0, "auto"]} width={50} />
         <Tooltip /><Legend />
         {mark && <ReferenceLine x={mark} stroke="#c0392b" label={{ value: "max_size", fontSize: 11 }} />}
-        {lines.map(([key, color, dash]) => <Line key={key} dataKey={key} stroke={color} strokeDasharray={dash} dot={!dash} isAnimationActive={false} />)}
+        {lines.map(([key, color, dash, name]) => <Line key={key} dataKey={key} name={name ?? key} stroke={color} strokeDasharray={dash} dot={!dash} isAnimationActive={false} />)}
       </LineChart>
     </ResponsiveContainer>
   );
@@ -74,7 +76,7 @@ export default function Report({ job }) {
   const href = useMemo(() => rep && URL.createObjectURL(new Blob([JSON.stringify(rep, null, 1)], { type: "application/json" })), [rep]);
   if (!rep) return <Verdict job={job} rep={null} />;
   const seedOnly = rep.mode?.mode === "seed-only";
-  const cal = (rep.calibration?.table ?? []).filter((r) => r.size).map((r) => ({ size: r.size, "reference ms": Math.max(0.1, r.ref_median_ms) }));
+  const cal = (rep.calibration?.table ?? []).filter((r) => r.size).map((r) => ({ size: r.size, p75: Math.max(0.1, r.ref_p75_ms ?? r.ref_median_ms) }));
   const sweep = (rep.sweep ?? []).map((r) => ({ workers: r.workers, "speed-up": r.speedup, ideal: r.workers }));
   const h = rep.hunt, c = rep.compare;
   return (
@@ -84,19 +86,21 @@ export default function Report({ job }) {
       {(rep.warnings ?? []).map((w) => <div key={w} className="banner warn">{w}</div>)}
       {rep.bug && <FailingTest bug={rep.bug} />}
       {rep.llm && <LlmCard id={job.id} llm={rep.llm} />}
-      {cal.length > 0 && <Card title="Calibration"><Chart data={cal} x="size" log mark={rep.calibration.max_size} lines={[["reference ms", "#0e8a8a"]]} />
-        <div className="meta">reference median time per input vs generator size (log–log); sizes above max_size are not fuzzed</div></Card>}
+      {cal.length > 0 && <Card title="Calibration"><Chart data={cal} x="size" log mark={rep.calibration.max_size} lines={[["p75", "#0e8a8a", undefined, "reference time, 75th percentile of 9 inputs"]]} />
+        <div className="meta">reference time per input vs generator size (log–log); sizes above max_size are not fuzzed</div></Card>}
       {sweep.length > 0 && (
         <Card title="Performance">
           <Chart data={sweep} x="workers" ticks={sweep.map((r) => r.workers)} lines={[["speed-up", "#0e8a8a"], ["ideal", "#888", "5 4"]]} />
           {c && <div>At {c.workers} workers: noshare {fmt(c.median.noshare, 0)} tests/s vs rwlock {fmt(c.median.rwlock, 0)} tests/s — ratio <b>{c.ratio_rwlock_vs_noshare}</b>
             <div className="meta">{c.note}</div></div>}
+          {sweep.length === 2 && <div className="meta">1-minute budget: measured at 1 and {sweep[1].workers} workers only.</div>}
           <div className="meta">{rep.perf_note}</div>
         </Card>
       )}
       {h && <Card title="Hunt statistics"><div className="stats">
-        <span>tests <b>{fmt(h.tests, 0)}</b></span><span>tests/s <b>{fmt(h.tests_per_sec, 0)}</b></span><span>coverage features <b>{h.cov_features}</b></span>
-        <span>{Object.entries(h.outcomes).map(([k, v]) => `${k} ${v}`).join(" · ")}</span></div></Card>}
+        <span>{rep.bug ? "tests run (incl. tests in flight when the first bug was found)" : "tests"} <b>{fmt(h.tests, 0)}</b></span><span>tests/s <b>{fmt(h.tests_per_sec, 0)}</b></span><span>coverage features <b>{h.cov_features}</b></span>
+        <span>{Object.entries(h.outcomes).map(([k, v]) => `${k} ${v}`).join(" · ")}</span></div>
+        {rep.calibration?.max_size && <div className="meta">The hunt uses calibrated sizes (1–{rep.calibration.max_size}, log-uniform), so its tests/s is lower than the performance section's (sizes 1–200).</div>}</Card>}
       <a href={href} download="report.json">Download report.json</a>
     </>
   );

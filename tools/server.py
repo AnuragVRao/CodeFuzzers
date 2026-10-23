@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Analysis server: upload gen/ref/sol (+checker), queue, run tools/analyze.py, stream progress.
-Usage: python3 tools/server.py   (binds 127.0.0.1:8000 only)
+Usage: python3 tools/server.py   (binds 127.0.0.1:8000 only; CF_PORT / CF_JOBS_DIR override port and job directory, used by tests)
 Jobs live in results/jobs/<id>/ (gen.cpp ref.cpp sol.cpp [checker.cpp] config.json status.json progress.jsonl
 report.json analyze.log ...); uploads are saved under fixed names, client file names are never used.
 One worker thread runs jobs FIFO. Each job is a process group with resource limits; it is killed on cancel,
@@ -16,7 +16,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse, StreamingResponse
 
 ROOT = Path(__file__).resolve().parent.parent
-JOBS, EXAMPLES = ROOT / "results" / "jobs", ROOT / "examples"
+JOBS, EXAMPLES = Path(os.environ.get("CF_JOBS_DIR", ROOT / "results" / "jobs")), ROOT / "examples"
+PORT = int(os.environ.get("CF_PORT", 8000))
+WALL_LIMIT_OVERRIDE_S = os.environ.get("CF_WALL_LIMIT_OVERRIDE_S")  # TEST-ONLY (tools/e2e_test.sh): replaces budget_s + 120
 MAX_BYTES, BUDGETS = 1 << 20, (60, 180, 600)
 TERMINAL = ("done", "failed", "cancelled", "timeout", "interrupted")
 ID_RE = re.compile(r"^\d{8}T\d{6}Z-[0-9a-f]{6}$")
@@ -118,7 +120,7 @@ def run_job(jid):
         proc = subprocess.Popen([sys.executable, str(ROOT / "tools" / "analyze.py"), str(d)], stdout=log, stderr=subprocess.STDOUT,
                                 cwd=ROOT, start_new_session=True, preexec_fn=set_limits)
         update(jid, pid=proc.pid)
-        deadline, state = time.time() + budget + 120, None
+        deadline, state = time.time() + (float(WALL_LIMIT_OVERRIDE_S) if WALL_LIMIT_OVERRIDE_S else budget + 120), None
         while proc.poll() is None:
             if cancel_flag.is_set():
                 state = "cancelled"
@@ -313,4 +315,4 @@ def run_example(name: str):
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="127.0.0.1", port=8000, log_level="warning")
+    uvicorn.run(app, host="127.0.0.1", port=PORT, log_level="warning")

@@ -25,10 +25,12 @@ export default function JobView({ id, onBack }) {
         <div className="jobhead">
           <button className="toggle" onClick={onBack}>← back</button>
           <code>{job.id}</code> <Badge state={job.state} />
-          <span className="meta">budget {job.budget_s / 60} min · {job.state === "queued" ? `queue position ${position}` : `elapsed ${fmt(elapsed, 0)} s`}</span>
+          <span className="meta">{job.state === "queued" ? `budget ${job.budget_s} s · queue position ${position}`
+            : job.state === "done" ? `finished in ${fmt(elapsed, 0)} s (budget ${job.budget_s} s)`
+            : ended ? `${job.state} after ${fmt(elapsed, 0)} s (budget ${job.budget_s} s)` : `elapsed ${fmt(elapsed, 0)} s of ${job.budget_s} s`}</span>
           {!ended && <button className="toggle cancel" onClick={cancel}>Cancel</button>}
         </div>
-        <div className="bar"><div style={{ width: `${Math.min(100, (100 * elapsed) / job.budget_s)}%` }} /></div>
+        <div className={`bar ${ended ? job.state : ""}`}><div style={{ width: `${ended ? 100 : Math.min(100, (100 * elapsed) / job.budget_s)}%` }} /></div>
         <div className="timeline">
           {STAGES.map((s) => (
             <div key={s} className={`stage ${stages[s].state}`}>

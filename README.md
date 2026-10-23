@@ -166,6 +166,51 @@ to work with. Only qwen3:8b located bugs better than chance.
 - **Holm correction** — 66 exploratory comparisons would produce false positives without it.
 - **Pre-declared confirmatory hunt** — the three problems were fixed by rule and committed before their data was collected.
 
+## Website (v1.1)
+
+Upload your own solution and get a differential-fuzzing report: build, validation, size calibration, a performance
+section, a time-boxed hunt, shrinking of the failing test, an optional LLM explanation.
+
+**Start** (two processes, both bound to localhost only):
+
+```bash
+python3 tools/server.py                                   # analysis server, 127.0.0.1:8000
+cd dashboard && source ~/.nvm/nvm.sh && npm run dev       # dashboard, http://localhost:5173 -> Analyze tab
+```
+
+**Inputs** — four files, at most 1 MB each, UTF-8 C++:
+- `gen.cpp` generator, `ref.cpp` reference (brute force), `sol.cpp` solution under test, and `checker.cpp` (testlib) when
+  the checker mode is "custom"; otherwise outputs are compared token by token.
+- Files must be self-contained. `testlib.h`, `random.h` and `fastio.h` are available as headers.
+- The generator takes its arguments from a template of whole arguments: `{seed} {size}` (default), `{seed}` (seed only) or
+  e.g. `-seed {seed} -n {size}`. `{seed}` and `{size}` must be whole arguments (`-n {size}`, not `-n={size}`).
+- The generator must be deterministic for a fixed seed (checked at validation; a generator seeded from `std::random_device`
+  is rejected). A generator exiting non-zero means "skip this seed".
+
+**Budget** — 1, 3 or 10 minutes. It covers building, validation, calibration, the performance measurements and the hunt
+(the hunt gets whatever remains, minus 3 s); shrinking may exceed it by up to ~8 s if a bug is found at the very end.
+The optional LLM explanation runs after the budget (typically 15–30 s). The whole job is killed after budget + 120 s.
+
+**Report sections** — verdict banner; failing test (shrunk input, reference and solution output, differing tokens
+highlighted) and the unverified LLM suggestion with the surrounding source lines; calibration (reference time per input vs
+generator size, p75 of 9 inputs, the size cap at 50 ms); performance (speed-up vs workers, noshare vs rwlock, sizes 1–200);
+hunt statistics. `report.json` can be downloaded.
+
+**Clean bound** — if no failing input is found in N tests, the report says that with 95 % confidence fewer than
+1 − 0.05^(1/N) of the inputs expose a bug. "Inputs" means inputs from this generator with sizes drawn log-uniformly from
+1–max_size (the hunt's size distribution); it is not a statement about other generators or sizes.
+
+**Seed-only mode** — if the template has no `{size}` (or the output does not grow with it), calibration, guided size
+mutation and size shrinking are disabled. Shrinking then only keeps the smallest failing input among fresh seeds, which
+shrinks far less: on the same bug (`range_affine_point_get`) the sized generator shrinks the failing input from 899 to
+43 bytes, the seed-only generator from 13842 to 6227 bytes. Give the generator a size knob when you can.
+
+**Guard rails** — one job at a time (FIFO queue), each in its own process group with limits (4 GiB address space, 256 MiB
+files, no core dumps, 4096 processes); cancel, wall-limit timeout and a final kill of the group after every job; uploaded
+code that forks ends with "Process limit reached". These are resource limits, not a sandbox: the server runs uploaded C++
+with your user's permissions, so it binds to 127.0.0.1 only and must not be exposed to a network. Tests:
+`tools/e2e_test.sh` (full, ~5 min) and the fast subset inside `tools/selftest.sh`.
+
 ## Threats to validity
 
 - **CPU topology.** The i7-13650HX is a hybrid chip (6 performance cores with hyper-threading, 8

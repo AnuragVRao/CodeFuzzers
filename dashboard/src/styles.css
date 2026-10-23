@@ -93,6 +93,7 @@ th { color: var(--navy); font-weight: 600; }
 .jobhead { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
 .jobhead .cancel { margin-left: auto; border-color: #c0392b; color: #c0392b; }
 .bar { height: 8px; background: #eef0f3; border-radius: 4px; overflow: hidden; margin-bottom: 12px; }
+.bar.failed div, .bar.timeout div, .bar.interrupted div { background: #c0392b; } .bar.cancelled div { background: #9ca3af; }
 .bar div { height: 100%; background: var(--teal); transition: width 0.4s; }
 .timeline { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 4px 16px; }
 .stage { display: grid; grid-template-columns: 20px auto 1fr; gap: 6px; align-items: baseline; font-size: 14px; min-width: 0; }

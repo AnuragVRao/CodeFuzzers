@@ -23,7 +23,7 @@ PERF_NOTE = "Performance measured at sizes 1–200 (uniform), independent of the
 EVAL_NOTE = "in our evaluation, qwen3:8b located 7/29 planted bugs within ±3 lines (chance ≈ 7%)"
 BATTERY_WARNING = "Running on battery: throughput figures can be ~30% lower than when plugged in (measured on this laptop)."
 PAR_EFF = 0.5  # assumed parallel efficiency when sizing sweep runs (measured here: 0.43-0.7 at 8-20 workers)
-CAL_MS, CAL_BYTES, CAL_MAX_EXP = 50, 1_000_000, 20
+CAL_MS, CAL_BYTES, CAL_MAX_EXP, CAL_SEEDS = 50, 1_000_000, 20, 9  # stop at a size whose p75 reference time exceeds CAL_MS
 SCALE_MAX_SIZE = 200  # sweep / compare measure throughput, not bug finding: keep their tests cheap
 
 
@@ -201,12 +201,14 @@ def calibrate(job, bundle, mode):
     table, max_size = [], 1
     for e in range(CAL_MAX_EXP + 1):
         size = 2 ** e
-        rs = [ref_test(bundle, size, s, tmp) for s in range(1, 6)]
-        good = [r[1] for r in rs if r[0] == "ok"]
-        med, top = (statistics.median(good) if good else 0), max(r[2] for r in rs)
-        table.append(dict(size=size, ref_median_ms=round(med, 2), input_bytes=top))
-        job.ev("calibrate", "info", f"size {size}: ref {med:.1f} ms, {top} bytes")
-        if med > CAL_MS or top > CAL_BYTES or any(r[0] == "invalid" for r in rs):
+        rs = [ref_test(bundle, size, sd, tmp) for sd in range(1, CAL_SEEDS + 1)]
+        good = sorted(r[1] for r in rs if r[0] == "ok")
+        med = statistics.median(good) if good else 0
+        p75 = good[-3] if len(good) >= 3 else (good[-1] if good else 0)  # 3rd largest of 9 ~ 75th percentile
+        top = max(r[2] for r in rs)
+        table.append(dict(size=size, ref_median_ms=round(med, 2), ref_p75_ms=round(p75, 2), input_bytes=top))
+        job.ev("calibrate", "info", f"size {size}: ref p75 {p75:.1f} ms, {top} bytes")
+        if p75 > CAL_MS or top > CAL_BYTES or any(r[0] == "invalid" for r in rs):
             break
         max_size = size
     return dict(max_size=max_size, table=table)
