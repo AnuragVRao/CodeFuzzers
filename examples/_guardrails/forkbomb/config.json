@@ -3,5 +3,6 @@
  "checker": "exact",
  "budget_s": 60,
  "workers": 20,
- "llm_model": "qwen3:8b"
+ "llm_model": "qwen3:8b",
+ "description": "Guard-rail fixture: the solution forks in a loop."
 }

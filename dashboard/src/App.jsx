@@ -2,13 +2,14 @@
 // Each tab receives the whole summary and handles its own missing sections ("No data yet").
 import { useEffect, useState } from "react";
 import Overview from "./tabs/Overview.jsx";
+import Analyze from "./tabs/Analyze.jsx";
 import Scaling from "./tabs/Scaling.jsx";
 import Hunt from "./tabs/Hunt.jsx";
 import Bugs from "./tabs/Bugs.jsx";
 import Shrinking from "./tabs/Shrinking.jsx";
 import { NoData } from "./ui.jsx";
 
-const TABS = { Overview, Scaling, Hunt, Bugs, Shrinking };
+const TABS = { Overview, Analyze, Scaling, Hunt, Bugs, Shrinking };
 
 export default function App() {
   const [data, setData] = useState(undefined); // undefined = loading, null = no summary
@@ -34,7 +35,7 @@ export default function App() {
         ))}
       </nav>
       <main>
-        {data === undefined ? <p>Loading…</p> : data === null ? <NoData /> : <Tab data={data} />}
+        {tab === "Analyze" ? <Analyze /> : data === undefined ? <p>Loading…</p> : data === null ? <NoData /> : <Tab data={data} />}
       </main>
     </div>
   );

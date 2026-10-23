@@ -6,14 +6,14 @@ report.json analyze.log ...); uploads are saved under fixed names, client file n
 One worker thread runs jobs FIFO. Each job is a process group with resource limits; it is killed on cancel,
 after budget_s + 120 s, and always swept after it ends. Jobs found queued/running at startup become "interrupted".
 """
-import asyncio, collections, json, os, re, resource, secrets, shutil, signal, subprocess, sys, threading, time
+import asyncio, collections, contextlib, json, os, re, resource, secrets, shutil, signal, subprocess, sys, threading, time
 from datetime import datetime, timezone
 from pathlib import Path
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from starlette.datastructures import UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import PlainTextResponse, StreamingResponse
 
 ROOT = Path(__file__).resolve().parent.parent
 JOBS, EXAMPLES = ROOT / "results" / "jobs", ROOT / "examples"
@@ -167,25 +167,22 @@ def reap_old_jobs():
 
 
 # ---------------------------------------------------------------- API
-app = FastAPI(title="CodeFuzzers analysis server")
-app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173"], allow_methods=["*"], allow_headers=["*"])
-
-
-@app.on_event("startup")
-def startup():
+@contextlib.asynccontextmanager
+async def lifespan(app):
     JOBS.mkdir(parents=True, exist_ok=True)
     reap_old_jobs()
     threading.Thread(target=worker, daemon=True).start()
-
-
-@app.on_event("shutdown")
-def shutdown():
-    if current:
+    yield
+    if current:  # server stopping: do not leave the running job's processes behind
         cancel_flag.set()
         st = read_json(JOBS / current / "status.json", {})
         if st.get("pid"):
             killpg(st["pid"], signal.SIGKILL)
         update(current, state="interrupted", outcome_summary="interrupted", error="server stopped")
+
+
+app = FastAPI(title="CodeFuzzers analysis server", lifespan=lifespan)
+app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173"], allow_methods=["*"], allow_headers=["*"])
 
 
 def check_template(t):
@@ -246,6 +243,18 @@ def get_job(jid: str):
     return {**read_json(d / "status.json"), "report": read_json(d / "report.json")}
 
 
+FILES = {"gen.cpp": "gen.cpp", "ref.cpp": "ref.cpp", "sol.cpp": "sol.cpp", "checker.cpp": "checker.cpp",
+         "shrunk_input.txt": "shrunk/input.txt", "shrunk_ref_out.txt": "shrunk/ref_out.txt", "shrunk_fast_out.txt": "shrunk/fast_out.txt"}
+
+
+@app.get("/api/jobs/{jid}/files/{name}", response_class=PlainTextResponse)
+def get_file(jid: str, name: str):
+    d = job_dir(jid)
+    if name not in FILES or not (d / FILES[name]).is_file():
+        raise HTTPException(404, "no such file")
+    return (d / FILES[name]).read_text(errors="replace")
+
+
 @app.get("/api/jobs/{jid}/events")
 async def events(jid: str, request: Request):
     d = job_dir(jid)
@@ -291,7 +300,7 @@ def example_names():
 
 @app.get("/api/examples")
 def examples():
-    return [dict(name=n, config=read_json(EXAMPLES / n / "config.json")) for n in example_names()]
+    return [dict(name=n, description=read_json(EXAMPLES / n / "config.json").get("description", ""), config=read_json(EXAMPLES / n / "config.json")) for n in example_names()]
 
 
 @app.post("/api/examples/{name}/run")

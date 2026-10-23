@@ -8,7 +8,7 @@ into <job_dir>; everything else (build/, bug/, shrunk/, tmp/) stays there too. E
 no bug), 1 = a stage failed. The hunt gets budget - elapsed - 3 s, min 10 s, and runs with log-uniform sizes; sweep and compare run before it
 (time-boxed to 20% of the budget, max 60 s), with uniform sizes capped at SCALE_MAX_SIZE. The LLM runs after the budget.
 """
-import json, os, shutil, statistics, subprocess, sys, threading, time, urllib.request
+import errno, json, os, shutil, statistics, subprocess, sys, threading, time, urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import llm, problems, shrink
@@ -27,8 +27,16 @@ CAL_MS, CAL_BYTES, CAL_MAX_EXP = 50, 1_000_000, 20
 SCALE_MAX_SIZE = 200  # sweep / compare measure throughput, not bug finding: keep their tests cheap
 
 
+LIMIT_MSG = "Process limit reached: the uploaded code appears to create processes (fork). Solutions must not spawn processes."
+
+
 class StageFail(Exception):
     pass
+
+
+def limit_hit(e):
+    """True if exception e means the process limit (EAGAIN) was hit while starting a process."""
+    return "Resource temporarily unavailable" in str(e) or (isinstance(e, OSError) and e.errno == errno.EAGAIN)
 
 
 class Job:
@@ -54,9 +62,10 @@ class Job:
         t = time.time()
         try:
             r = fn(*args)
-        except StageFail as e:
-            self.ev(name, "fail", str(e))
-            raise
+        except (StageFail, OSError) as e:
+            msg = LIMIT_MSG if limit_hit(e) else str(e)
+            self.ev(name, "fail", msg)
+            raise StageFail(msg) from e
         finally:
             self.durations[name] = round(time.time() - t, 2)
         self.ev(name, "done", f"{self.durations[name]} s")
@@ -375,7 +384,7 @@ def main():
     except StageFail as e:
         failed = str(e)
     except Exception as e:  # unexpected: still leave a report behind
-        failed = f"internal error: {e!r}"
+        failed = LIMIT_MSG if limit_hit(e) else f"internal error: {e!r}"
         job.ev("pipeline", "fail", failed)
     shutil.rmtree(job.d / "tmp", ignore_errors=True)
     job.report.update(status="failed" if failed else "completed", failure=failed, warnings=job.warnings,

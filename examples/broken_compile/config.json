@@ -3,5 +3,6 @@
  "checker": "exact",
  "budget_s": 60,
  "workers": 20,
- "llm_model": "qwen3:8b"
+ "llm_model": "qwen3:8b",
+ "description": "Solution with a syntax error: the analysis fails at the build stage."
 }

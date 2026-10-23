@@ -2,7 +2,7 @@
 // click a card to see the shrunk input and both outputs, with differing tokens highlighted, and the
 // local LLM's diagnosis (suggested line, category, explanation, fix) with ✓/✗ against the planted bug.
 import { useState } from "react";
-import { NoData, fmt, uniq } from "../ui.jsx";
+import { DiffText, NoData, fmt, uniq } from "../ui.jsx";
 
 const mark = (ok) => (ok ? <span className="ok">✓</span> : <span className="bad">✗</span>);
 
@@ -15,28 +15,6 @@ function LlmBox({ m, model }) {
       <div>{m.explanation}</div>
       <pre className="mono">{m.fix}</pre>
     </div>
-  );
-}
-
-// Render `text` token by token; tokens that differ from `other` at the same (line, index) are marked.
-function DiffText({ text, other }) {
-  const otherLines = other.split("\n").map((l) => l.split(/\s+/).filter(Boolean));
-  return (
-    <pre className="mono">
-      {text.split("\n").map((line, i) => {
-        let k = 0;
-        return (
-          <span key={i}>
-            {line.split(/(\s+)/).map((tok, j) => {
-              if (!tok || /^\s+$/.test(tok)) return tok;
-              const same = otherLines[i]?.[k++] === tok;
-              return same ? tok : <mark key={j} className="diff">{tok}</mark>;
-            })}
-            {"\n"}
-          </span>
-        );
-      })}
-    </pre>
   );
 }
 

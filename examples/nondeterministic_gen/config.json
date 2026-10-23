@@ -3,5 +3,6 @@
  "checker": "exact",
  "budget_s": 60,
  "workers": 20,
- "llm_model": "qwen3:8b"
+ "llm_model": "qwen3:8b",
+ "description": "Generator seeded from std::random_device: rejected because it is not deterministic."
 }

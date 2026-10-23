@@ -3,5 +3,6 @@
  "checker": "custom",
  "budget_s": 60,
  "workers": 20,
- "llm_model": "qwen3:8b"
+ "llm_model": "qwen3:8b",
+ "description": "Longest-common-substring solution with a planted bug; answers verified by a testlib checker."
 }
