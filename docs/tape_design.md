@@ -20,12 +20,19 @@ Make pool entries steerable. A v2 recipe = (variant, size, seed, tape). The same
 
 ### Shared memory (per worker, generator server only)
 header {magic, version, in_len, out_len, log_len, flags, budget, fallback_zero} | input words[CAP] | output words[CAP] | draw log[LOGCAP].
-- CAP = 97,930 words, LOGCAP = 79,446 draw-log entries: 2x the maxima measured in Step 2.0 F5 (generator named
-  by the roadmap, the only one measured: connected_components_of_complement_graph at its max hunt size 200, 9,005 runs = seeds 1..5000 at size
-  200, seeds 7919k (k = 1..20) at every size 1..200, and the golden seeds; instrumented copy of random.h).
-  Observed maxima: 48,965 raw words and 39,723 draws (seed 3597, size 200). Analytic draw maximum at size 200:
-  19,899 shuffle draws + 19,900 uniform_bool draws + 3 = 39,802, within LOGCAP. Raw words have no hard bound
-  (rejection), so a longer tape sets the overflow flag (tape_overflow), never a crash.
+- CAP = 97,930 words, LOGCAP = 79,446 draw-log entries: 2x the largest raw-word and draw counts over ALL 37
+  generator binaries, measured with an instrumented copy of random.h (scratchpad only):
+  - all 37: seeds 1..2000 at size 200, seeds 7919k (k = 1..20) at every size 1..200, golden seeds at 200
+    (222,185 runs); connected_components_of_complement_graph also seeds 1..5000 at size 200 (Step 2.0 F5).
+  - Maxima: connected_components_of_complement_graph 48,965 words / 39,723 draws (seed 3597, size 200);
+    next largest two/three_edge_connected_components gen_alt 6,854 / 5,549; all others <= 2,376 / 1,603.
+  - Analytic draw maximum of connected_components_of_complement_graph at size 200: 19,899 shuffle draws
+    + 19,900 uniform_bool draws + 3 = 39,802, within LOGCAP. Raw words have no hard bound (rejection), so a
+    longer tape sets the overflow flag (tape_overflow), never a crash.
+  - enumerate_triangles aborts (assert in uniform(), lower > upper) on some seeds at size 200 after <= 3 words;
+    the fuzzer treats that as gen_skip.
+- Per-worker generator shm with 16-byte draw-log entries (accepted-word index + upper):
+  64 + 16 x CAP + 16 x LOGCAP = 2,838,080 bytes (2.84 MB, 2.71 MiB).
 
 ### Arena
 - Process-wide, append-only, bump-allocated (atomic fetch_add) region with tape words + draw logs of admitted entries. Fully written before the handle is published under the pool lock; never modified afterwards; read without locks.
