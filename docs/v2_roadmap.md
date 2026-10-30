@@ -206,7 +206,7 @@ OUTPUT: plan commit hash + timestamp, Part 2 table, Part 3 table, decision.
 
 ---
 
-## Step S: Shrinker (runs regardless of the 2e decision; needs 2a-2b)
+## Step S: Shrinker (runs regardless of the 2e decision; needs 2a)
 
 Scope: tools/shrink.py (or a new C++ shrinker if speed requires), new core/tape_file_runtime.cpp, tools/build.py (new build/tape/ flavour).
 
@@ -330,3 +330,4 @@ random strategy (--strategy random, unchanged v1), tape-noshare, tape-rwlock; ab
 - D13 Step S: new core/tape_file_runtime.cpp (CF_TAPE_IN/OUT/LOG, CF_TAPE_FALLBACK_ZERO, CF_TAPE_BUDGET), build/tape/ generator flavour used by the Python shrinker; gallery bugs start by capturing the tape with an empty input and the v1 seed, input hash verified first.
 - D14 Step S Phase 2: line-level then token-level ddmin; verifier on every candidate; failure judged as the fuzzer judges it (ref + fast + checker, same kind); 60 s cap per bug.
 - D15 Status: note that there is no Step 1; the original groundwork prompt became Step 0.
+- Step S heading: dependency is "needs 2a" (was "needs 2a-2b"); since D13 the shrinker uses the file-based runtime, not the 2b shm API.
