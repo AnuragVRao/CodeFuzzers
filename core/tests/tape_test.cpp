@@ -7,6 +7,10 @@
 //   T4 local mutation (toy, 20 x uniform(0, 1000)): rewriting draw 7's accepted word changes only line 7
 //   T5 no shift through rejection: as T4 for a seed where draw 7 needed >= 1 rejected word
 //   T6 budget: all-zero tape + fallback_zero, uniform_pair(0, 5) never ends -> budget exit within 1 s
+//   T7 boundary values: next(upper) is inclusive ([0, upper]); writing 0 and upper itself into draw 7's
+//      accepted word (uniform(0, 1000): mask + reject, incl. a seed with a rejected word; uniform(0, 1023):
+//      no-reject path) shows that value on line 7 and keeps every other line, every draw's accepted-word
+//      index and the tape length unchanged
 // Usage: build/tests/tape_test_<group>   Prints PASS/FAIL per check; exit code 1 on any FAIL.
 #include <sys/mman.h>
 #include <sys/wait.h>
@@ -98,6 +102,12 @@ int toy20(int, char** argv) {  // 20 lines, each uniform(0, 1000): one draw per 
     return 0;
 }
 
+int toy20p(int, char** argv) {  // 20 lines, each uniform(0, 1023): upper + 1 is a power of two (no rejection)
+    Random gen(atoll(argv[1]));
+    for (int i = 0; i < 20; i++) printf("%d\n", gen.uniform(0, 1023));
+    return 0;
+}
+
 int toy_pair(int, char** argv) {  // with all-zero words a == b forever
     Random gen(atoll(argv[1]));
     auto [a, b] = gen.uniform_pair(0, 5);
@@ -123,6 +133,23 @@ void local_mutation(const std::string& seed, const char* name) {
              name, seed.c_str(), (unsigned long long)old, (unsigned long long)v, diff, line7 && diff == 1 ? "yes" : "NO",
              (unsigned long long)cap.out_len, (unsigned long long)r.out_len);
     check(cap.log.size() == 20 && line7 && diff == 1 && r.out_len == cap.out_len && r.in_pos == mut.size(), msg);
+}
+// T7: write v (0 or upper) into draw 7's accepted word, replay, nothing but line 7 may change.
+void boundary(int (*toy)(int, char**), const char* toy_name, const std::string& seed, uint64_t v) {
+    Tape empty;
+    Run cap = run(toy, seed, "", &empty);
+    Tape mut = cap.tape;
+    mut[cap.log[6].index] = v;
+    Run r = run(toy, seed, "", &mut);
+    auto a = lines(cap.out), b = lines(r.out);
+    bool same_rest = a.size() == 20 && b.size() == 20, same_idx = r.log.size() == cap.log.size();
+    for (size_t i = 0; same_rest && i < 20; i++) same_rest = i == 6 || a[i] == b[i];
+    for (size_t i = 0; same_idx && i < r.log.size(); i++) same_idx = r.log[i].index == cap.log[i].index && r.log[i].upper == cap.log[i].upper;
+    bool rejected = cap.log[6].index > cap.log[5].index + 1;
+    check(b.size() == 20 && b[6] == std::to_string(v) && same_rest && same_idx && r.out_len == cap.out_len && r.in_pos == mut.size(),
+          "T7 " + std::string(toy_name) + " seed " + seed + (rejected ? " (draw 7 rejected a word)" : "") + ": draw 7 " + a[6] + " -> " +
+              std::to_string(v) + ", other lines and all 20 accepted-word indices unchanged, tape " +
+              std::to_string(cap.out_len) + " -> " + std::to_string(r.out_len) + " words");
 }
 }  // namespace tt
 
@@ -158,6 +185,12 @@ int main() {
     }
     check(!rej.empty(), "T5 found a seed where draw 7 rejected >= 1 word: " + rej);
     if (!rej.empty()) local_mutation(rej, "T5");
+
+    for (uint64_t v : {0, 1000}) {
+        boundary(toy20, "uniform(0, 1000)", "1", v);
+        if (!rej.empty()) boundary(toy20, "uniform(0, 1000)", rej, v);
+    }
+    for (uint64_t v : {0, 1023}) boundary(toy20p, "uniform(0, 1023)", "1", v);
 
     Tape zeros(16, 0);
     Run b = run(toy_pair, "1", "", &zeros, true, 1000000);
