@@ -12,6 +12,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include <chrono>
+#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <string>
@@ -19,6 +20,9 @@
 #include "random.h"
 
 cf_tape_session* cf_session = nullptr;  // strong definition: this test links no runtime
+// core/fs_runtime.cpp keeps a copy of these structs: both must have this layout
+static_assert(sizeof(cf_draw) == 16 && sizeof(cf_tape_session) == 88 && offsetof(cf_tape_session, budget) == 72 &&
+              offsetof(cf_tape_session, flags) == 80 && offsetof(cf_tape_session, fallback_zero) == 84, "fs_runtime.cpp layout");
 
 #define main cf_gen_main
 #include CF_GEN_SRC

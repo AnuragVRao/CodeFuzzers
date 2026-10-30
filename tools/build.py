@@ -62,6 +62,9 @@ def tool_targets():
             exe(BUILD / "pool_bench_tsan", CORE / "pool_bench.cpp", ["-fsanitize=thread", "-g", "-O1", "-pthread"], [pool]),
             exe(BUILD / "tests/server_test", t / "server_test.cpp", ["-O2"], [srv]),
             exe(BUILD / "tests/checker_test", t / "checker_test.cpp", ["-O2"], [srv, cmp_]),
+            exe(BUILD / "tests/tape_server_test", t / "tape_server_test.cpp", ["-O2"], [srv]),
+            exe(BUILD / "tests/gen_tape_toy", t / "gen_tape_toy.cpp", ["-O2", "-I", str(problems.DATASET / "common")],
+                [problems.DATASET / "common/random.h"], runtime=True),
             exe(BUILD / "fuzzer", CORE / "fuzzer.cpp", ["-O2", "-pthread"], [srv, pool, cmp_]),
             exe(BUILD / "fuzzer_tsan", CORE / "fuzzer.cpp", ["-fsanitize=thread", "-g", "-O1", "-pthread"], [srv, pool, cmp_])]
     jobs += [exe(BUILD / "tests" / n, t / f"{n}.cpp", ["-O2"], [], runtime=True) for n in ("crash", "hang", "exit3", "exit_code", "gen_named", "gen_seedonly")]
