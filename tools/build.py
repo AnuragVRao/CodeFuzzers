@@ -3,7 +3,8 @@
 build/fs_runtime.o (no coverage) is linked into every problem binary. Per problem in build/<name>/:
   lightweight (-O2): gen, gen_alt (if variant exists), ref, checker, verifier (plain, exit 0 = valid
   input on stdin);  path-tracking (-O2 trace-pc,
-  -no-pie): fast_sol, fast_bug.  Also smoke, pool_bench(_tsan), fuzzer(_tsan), tests/*.
+  -no-pie): fast_sol, fast_bug.  Also smoke, pool_bench(_tsan), fuzzer(_tsan), tests/* (tape_test_<group>:
+  core/tests/tape_test.cpp around one real generator, no runtime).
 Rebuilds when a target is older than its listed deps; --force rebuilds everything.
 """
 import argparse, subprocess
@@ -15,6 +16,9 @@ ROOT = problems.ROOT
 BUILD, CORE = ROOT / "build", ROOT / "core"
 RUNTIME = BUILD / "fs_runtime.o"
 COV = ["-fsanitize-coverage=trace-pc", "-no-pie"]
+# core/tests/tape_test.cpp is built once per group around one real generator (tape_test_<group>)
+TAPE_TESTS = {"arrays": "majority_voting", "strings": "longest_common_substring",
+              "graphs": "connected_components_of_complement_graph"}
 CXX = ["g++", "-std=c++17"]
 FORCE = False
 
@@ -59,6 +63,11 @@ def tool_targets():
             exe(BUILD / "fuzzer", CORE / "fuzzer.cpp", ["-O2", "-pthread"], [srv, pool, cmp_]),
             exe(BUILD / "fuzzer_tsan", CORE / "fuzzer.cpp", ["-fsanitize=thread", "-g", "-O1", "-pthread"], [srv, pool, cmp_])]
     jobs += [exe(BUILD / "tests" / n, t / f"{n}.cpp", ["-O2"], [], runtime=True) for n in ("crash", "hang", "exit3", "exit_code", "gen_named", "gen_seedonly")]
+    for group, name in TAPE_TESTS.items():
+        d = problems.get(name)["dir"]
+        jobs.append(exe(BUILD / "tests" / f"tape_test_{group}", t / "tape_test.cpp",
+                        [*problems.flags(d), f'-DCF_GEN_SRC="{d / "gen/generator.cpp"}"'],
+                        [d / "gen/generator.cpp", problems.DATASET / "common/random.h"]))
     return jobs
 
 

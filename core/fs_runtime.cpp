@@ -20,6 +20,12 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+// Tape session pointer declared weak in Dataset/common/random.h (docs/tape_design.md). Defined here so
+// binaries with this runtime have the symbol; null = no session = exact v1 generator behaviour.
+// The type stays incomplete: this file must not include random.h (it defines global_gen).
+struct cf_tape_session;
+cf_tape_session* cf_session = nullptr;
+
 namespace {
 constexpr int COV_FD = 197, REQ_FD = 198, REP_FD = 199;
 constexpr size_t MAP_SIZE = 1 << 16;

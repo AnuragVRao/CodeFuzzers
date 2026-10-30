@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # End-to-end self-test: build everything, then the golden generator hashes, the fork-server edge cases
-# and checker outcome mapping (C++, and Python agreeing with it), the pool correctness
+# and checker outcome mapping (C++, and Python agreeing with it), the random.h tape session, the pool correctness
 # check (plain and under ThreadSanitizer, with ASLR off because GCC 13 TSan needs it), the
 # aggregation self-test, a quick correct-solution sanity run on all problems, and the analysis server's
 # fast end-to-end subset (tools/e2e_test.sh --fast).
@@ -18,6 +18,10 @@ check() {  # check <name> <command...>: run quietly, keep the output only on fai
     fi
 }
 
+tape_tests() {  # core/tests/tape_test.cpp around one generator per group
+    for g in arrays strings graphs; do build/tests/tape_test_$g || return 1; done
+}
+
 tsan_pool_check() {  # passes only if the check passes AND TSan reported nothing
     setarch "$(uname -m)" -R build/pool_bench_tsan --check && ! grep -q "WARNING: ThreadSanitizer" "$log"
 }
@@ -25,6 +29,7 @@ tsan_pool_check() {  # passes only if the check passes AND TSan reported nothing
 check "build (tools/build.py)"                       python3 tools/build.py
 check "generators match golden (golden_gen --check)" python3 tools/golden_gen.py --check
 check "fork-server edge cases (server_test)"         build/tests/server_test
+check "tape session in random.h (tape_test x3)"      tape_tests
 check "checker outcome mapping (checker_test)"       build/tests/checker_test
 check "C++ and Python checker mapping agree"         python3 tools/checker_agree_test.py
 check "pool correctness (pool_bench --check)"        build/pool_bench --check
