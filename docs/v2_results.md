@@ -100,3 +100,53 @@ b4fa09c9bba6e46008762d30bcbf5631237b3509c6088c1885e21b366895059a  results/part2/
 5d662d17373403f92324685bb2ec070b767ac72d7b9be651e89d5da7419d37c0  results/part2/range_linear_add_range_min/warmup.json
 01c8e22170d6c94dd50be1c49848ac71cc55d95cb95c3e8bafd2d64709a9075f  results/part2/summary.json
 ```
+
+## Step 2e Part 3: pilot (2026-10-30)
+
+- Run commit: b94f7ce (recorded as git_commit in all 1,800 run JSONs, git_dirty false in all). b94f7ce differs from the
+  plan's commit 90cc267 only in docs/ (Part 2 results, Amendment 1); `git diff --stat 99e05aa..b94f7ce -- core/
+  Dataset/ tools/` is empty, so the code is the 99e05aa build.
+- Command: `python3 tools/run.py --exp pilot --preset full` (one discarded warm-up with seed 999 first).
+- Date: 2026-10-30, 19:47:52-19:54:18 UTC; runtime 6m27s wall; exit status 0; machine otherwise idle.
+- Runs: 1,800 / 1,800 run JSONs (3 problems x 3 arms x 200); seeds 5000-5199; block_seed = 5000 + r in every JSON.
+- Infrastructure failures (Amendment 1): 0 (no missing run JSON, no run that neither found the bug nor reached 20 s).
+  Censored runs: 0 in every arm x problem. Nothing was re-run.
+- Medians and quartiles: tools/aggregate.py quant() (numpy linear interpolation).
+
+### Criterion (b): median generated tests-to-bug (tests_before + 1), censored = +inf
+
+| problem | arm | n | censored | median | ratio vs random-capture | <= 0.70 |
+|---|---|---:|---:|---:|---:|---|
+| majority_voting | random-capture | 200 | 0 | 319.5 | - | - |
+| majority_voting | tape-noshare | 200 | 0 | 1,238.5 | 3.876 | FAIL |
+| majority_voting | tape-rwlock | 200 | 0 | 1,135.5 | 3.554 | FAIL |
+| range_linear_add_range_min | random-capture | 200 | 0 | 196.0 | - | - |
+| range_linear_add_range_min | tape-noshare | 200 | 0 | 1,041.5 | 5.314 | FAIL |
+| range_linear_add_range_min | tape-rwlock | 200 | 0 | 1,206.5 | 6.156 | FAIL |
+| longest_common_substring | random-capture | 200 | 0 | 289.5 | - | - |
+| longest_common_substring | tape-noshare | 200 | 0 | 357.5 | 1.235 | FAIL |
+| longest_common_substring | tape-rwlock | 200 | 0 | 229.5 | 0.793 | FAIL |
+
+Verdict for (b): FAIL (no tape / random-capture ratio <= 0.70 on any focus problem).
+Criterion (a): PASS (Part 2, above). Overall verdict under the committed criterion: STOP (PROCEED requires (a) AND (b)).
+
+### Descriptive (not part of the criterion)
+
+| problem | arm | gen p25 | gen p75 | executed median | executed p25 | executed p75 | median wall_s | dup_skip (sum) | gen_budget_exceeded (sum) | tape_overflow (sum) | runs with arena_full > 0 |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| majority_voting | random-capture | 116.5 | 636.0 | 319.5 | 116.5 | 636.0 | 0.050 | 0 | 0 | 0 | 0 |
+| majority_voting | tape-noshare | 411.8 | 2,531.2 | 1,126.5 | 373.0 | 2,264.8 | 0.128 | 39842 | 0 | 0 | 0 |
+| majority_voting | tape-rwlock | 411.5 | 2,800.8 | 1,009.0 | 374.2 | 2,528.5 | 0.118 | 42186 | 0 | 0 | 0 |
+| range_linear_add_range_min | random-capture | 73.5 | 362.5 | 196.0 | 73.5 | 362.5 | 0.036 | 0 | 0 | 0 | 0 |
+| range_linear_add_range_min | tape-noshare | 437.0 | 1,825.0 | 977.0 | 418.5 | 1,716.0 | 0.122 | 17588 | 0 | 0 | 0 |
+| range_linear_add_range_min | tape-rwlock | 534.0 | 2,230.5 | 1,117.5 | 506.2 | 2,075.5 | 0.132 | 26106 | 0 | 0 | 0 |
+| longest_common_substring | random-capture | 134.0 | 646.8 | 289.5 | 134.0 | 646.8 | 0.175 | 0 | 0 | 0 | 0 |
+| longest_common_substring | tape-noshare | 123.8 | 713.8 | 296.5 | 104.8 | 595.2 | 0.144 | 16745 | 0 | 0 | 0 |
+| longest_common_substring | tape-rwlock | 118.8 | 387.8 | 194.5 | 97.5 | 329.2 | 0.085 | 9415 | 0 | 0 | 0 |
+
+dup_skip, gen_budget_exceeded and tape_overflow are sums over the 200 runs. Runs with arena_full > 0: none.
+
+### Raw outputs
+results/raw/pilot/ (gitignored): 6,600 files (1,800 run JSONs and 1,800 bug directories with input.txt, recipe.txt,
+and tape.bin for tape arms). Every file's SHA-256 is listed in docs/v2_pilot_raw.sha256 (`sha256sum -c` format,
+6,600 lines; sha256 of that manifest: 0f65644878e7085c5c90e215391386bf0fed62ce1106ab70c1be66f6aaa5e0ea).
