@@ -64,6 +64,8 @@ v2 work follows docs/v2_roadmap.md. Read it before any v2 task.
 ## Design rules (do not change without being asked)
 - A pool entry is a recipe (variant, size, seed) that reached new coverage, never raw
   input text. Mutation keeps the variant, perturbs size (clamped), draws a fresh seed.
+  v2 (tape) recipes follow docs/tape_design.md. The v1 rule stays in force for all v1
+  experiments and all scale experiments.
 - The shared pool lives only in C++. Python never touches it during a timed run.
 - Pool strategies: global mutex, sharded mutexes, shared_mutex (readers-writers),
   RCU-style snapshot (atomic shared_ptr swap), and no-sharing baseline.
