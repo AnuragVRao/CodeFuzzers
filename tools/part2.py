@@ -6,8 +6,10 @@
 2. Children: build/part2 draws CHILDREN children per mode (guided = v1 guided, byte = tape --tape-mut byte,
    draw = tape draw-level) from that parent set, with one parent sequence shared by the three modes; it saves
    the (parent, child) pairs, both generator outputs and the --op-log operator list.
-3. Offline: per mode, over children whose generator run was OK: mut_changed_input = changed / OK, and
-   mut_similarity = similarity(parent output, child output) (median, q1, q3).
+3. Offline: per mode, over children whose generator run was OK: mut_changed_input = changed / OK children;
+   mut_similarity = similarity(parent output, child output), median/q1/q3 over the CHANGED children only (the
+   value criterion (a) uses); mut_similarity_all_median = median over all OK children, unchanged ones counting
+   1.0 (descriptive only).
 similarity: tokens = maximal runs of digits with an optional leading '-', otherwise any single non-whitespace
 character (whitespace only separates tokens), first 20,000 tokens of each output;
 ratio = difflib.SequenceMatcher(None, parent_tokens, child_tokens, autojunk=False).ratio().
@@ -37,6 +39,13 @@ def part2_problems():
 
 def tokens(text):
     return TOKEN.findall(text)[:MAX_TOKENS]
+
+
+def check_cap(text, what):
+    """The 20,000-token cap never triggers for the Part 2 set (static bound 1,202, docs/tape_design.md): abort if it would."""
+    n = len(TOKEN.findall(text))
+    if n > MAX_TOKENS:
+        raise SystemExit(f"{what}: {n} tokens > {MAX_TOKENS}; the similarity would be truncated (docs/tape_design.md)")
 
 
 def similarity(a, b):
@@ -74,17 +83,31 @@ def produce(name, seed, warmup, children, d):
                     "--seed", str(seed), "--out", str(d)], check=True, capture_output=True)
 
 
+def summarise(children):
+    """children: (changed, similarity) per OK child -> the Part 2 metrics of one mode.
+    mut_similarity_median/q1/q3: over changed children only (criterion (a)); mut_similarity_all_median: over all
+    OK children, an unchanged child counting 1.0 (descriptive only)."""
+    changed = [s for c, s in children if c]
+    every = [s if c else 1.0 for c, s in children]
+    q = statistics.quantiles(changed, n=4) if len(changed) > 1 else [None] * 3
+    return dict(ok=len(children), mut_changed_input=len(changed) / len(children) if children else None,
+                mut_similarity_median=statistics.median(changed) if changed else None, mut_similarity_q1=q[0], mut_similarity_q3=q[2],
+                mut_similarity_all_median=statistics.median(every) if every else None)
+
+
 def measure(d):
-    """Step 3: per mode {children, ok, mut_changed_input, mut_similarity_median/q1/q3}, plus the raw similarities."""
+    """Step 3: per mode {children, ok, mut_changed_input, mut_similarity_*}, plus the raw similarities."""
     parents = read_framed(d / "parents.out")
+    for i, text in parents.items():
+        check_cap(text, f"{d.name} parent {i}")
     out = {}
     for m in MODES:
         rows, texts = read_tsv(d / f"{m}.tsv"), read_framed(d / f"{m}.out")
         ok = [r for r in rows if r["status"] == 0]
+        for r in ok:
+            check_cap(texts[r["i"]], f"{d.name} {m} child {r['i']}")
         sims = [similarity(parents[r["parent"]], texts[r["i"]]) for r in ok]
-        q = statistics.quantiles(sims, n=4) if len(sims) > 1 else [None] * 3
-        out[m] = dict(children=len(rows), ok=len(ok), mut_changed_input=sum(r["changed"] == "1" for r in ok) / len(ok) if ok else None,
-                      mut_similarity_median=statistics.median(sims) if sims else None, mut_similarity_q1=q[0], mut_similarity_q3=q[2],
+        out[m] = dict(children=len(rows), **summarise([(r["changed"] == "1", s) for r, s in zip(ok, sims)]),
                       _sims=sims, _rows=rows, _texts=texts)
     return out
 
@@ -118,6 +141,19 @@ def selftest():
         ("  (difflib's default autojunk would give, far below)", difflib.SequenceMatcher(None, tokens(rep), tokens(flip)).ratio(), lambda r: r < 0.9),
         ("tokens: '-12 x3' -> ['-12', 'x', '3']", tokens("-12 x3") == ["-12", "x", "3"], lambda r: r),
     ]
+    def aborts(text):  # the truncation guard must accept 20,000 tokens and abort on 20,001
+        try:
+            check_cap(text, "test")
+            return False
+        except SystemExit:
+            return True
+    cases.append(("truncation guard: 20,000 tokens pass, 20,001 abort",
+                  (aborts("1 " * MAX_TOKENS), aborts("1 " * (MAX_TOKENS + 1))), lambda r: r == (False, True)))
+    # denominator: 3 changed children (0.2, 0.3, 0.4) + 2 unchanged -> criterion median 0.3, all-children median 0.4
+    s = summarise([(True, 0.2), (False, 1.0), (True, 0.3), (False, 1.0), (True, 0.4)])
+    cases += [("criterion median over changed children only (0.2, 0.3, 0.4)", s["mut_similarity_median"], lambda r: r == 0.3),
+              ("  descriptive all-children median (unchanged count 1.0)", s["mut_similarity_all_median"], lambda r: r == 0.4),
+              ("  mut_changed_input = 3 / 5", s["mut_changed_input"], lambda r: r == 0.6)]
     bad = 0
     for what, r, ok in cases:
         bad += not ok(r)

@@ -94,9 +94,15 @@ header {magic, cap, log_cap, in_off, out_off, log_off, out_len, log_len, consume
 generated, executed, dup_skip, mut_changed_input (fraction of mutated children whose input hash differs from the parent's), arena_bytes, arena_full, gen_budget_exceeded, tape_overflow.
 mut_similarity (offline, Step 2e Part 2 only, never in the timed loop; tools/part2.py): for a mutated child,
 difflib.SequenceMatcher(None, parent_tokens, child_tokens, autojunk=False).ratio() of the parent's and the child's
-generator outputs, computed in Python from the saved (parent, child) pairs. Tokenisation, identical for every
+generator outputs, computed in Python from the saved (parent, child) pairs. Denominator: criterion (a)'s "median
+mut_similarity" (and its IQR) is taken over the children whose input changed (mut_changed = 1) only; the median over
+all children (an unchanged child counting 1.0) is also reported, as descriptive only. Tokenisation, identical for every
 problem: a token is a maximal run of digits with an optional leading '-', otherwise any single non-whitespace
-character; whitespace only separates tokens (regex -?\d+|\S); first 20,000 tokens of each output. Why: with
+character; whitespace only separates tokens (regex -?\d+|\S); first 20,000 tokens of each output. For the Part 2
+set the cap never triggers: static maxima from the generator code at size 200 (every Part 2 size is <= max_size = 200)
+are majority_voting 2 + 200 + 3x200 = 802; range_linear_add_range_min (gen and gen_alt) 2 + 200 + 5x200 = 1,202;
+longest_common_substring 2x200 = 400; deque_operate_all_composite 1 + 5x200 = 1,001; enumerate_palindromes 200;
+cartesian_tree 1 + 200 = 201 tokens. tools/part2.py aborts if any parent or child output would be truncated. Why: with
 whitespace tokens a string input is one token (one changed character in a 2-string input gives exactly 0.5), and
 difflib's default autojunk treats frequent tokens as junk (a 400-token 0/1 list with one flipped value: 0.5 instead
 of 0.9975).
