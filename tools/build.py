@@ -55,7 +55,7 @@ def tool_targets():
     def exe(out, src, flags, deps, runtime=False):
         cmd = [*CXX, *flags, "-o", str(out), str(src)] + ([str(RUNTIME)] if runtime else [])
         return out, cmd, [src, *deps] + ([RUNTIME] if runtime else [])
-    srv, pool, cmp_ = CORE / "server.hpp", CORE / "pool.hpp", CORE / "compare.hpp"
+    srv, pool, cmp_, arena = CORE / "server.hpp", CORE / "pool.hpp", CORE / "compare.hpp", CORE / "arena.hpp"
     t = CORE / "tests"
     jobs = [exe(BUILD / "smoke", CORE / "smoke.cpp", ["-O2"], [srv, cmp_]),
             exe(BUILD / "pool_bench", CORE / "pool_bench.cpp", ["-O2", "-pthread"], [pool]),
@@ -65,8 +65,10 @@ def tool_targets():
             exe(BUILD / "tests/tape_server_test", t / "tape_server_test.cpp", ["-O2"], [srv]),
             exe(BUILD / "tests/gen_tape_toy", t / "gen_tape_toy.cpp", ["-O2", "-I", str(problems.DATASET / "common")],
                 [problems.DATASET / "common/random.h"], runtime=True),
-            exe(BUILD / "fuzzer", CORE / "fuzzer.cpp", ["-O2", "-pthread"], [srv, pool, cmp_]),
-            exe(BUILD / "fuzzer_tsan", CORE / "fuzzer.cpp", ["-fsanitize=thread", "-g", "-O1", "-pthread"], [srv, pool, cmp_])]
+            exe(BUILD / "fuzzer", CORE / "fuzzer.cpp", ["-O2", "-pthread"], [srv, pool, cmp_, arena]),
+            exe(BUILD / "fuzzer_tsan", CORE / "fuzzer.cpp", ["-fsanitize=thread", "-g", "-O1", "-pthread"], [srv, pool, cmp_, arena]),
+            exe(BUILD / "tests/arena_test", t / "arena_test.cpp", ["-O2", "-pthread"], [arena, pool, srv]),
+            exe(BUILD / "tests/arena_test_tsan", t / "arena_test.cpp", ["-fsanitize=thread", "-g", "-O1", "-pthread"], [arena, pool, srv])]
     jobs += [exe(BUILD / "tests" / n, t / f"{n}.cpp", ["-O2"], [], runtime=True) for n in ("crash", "hang", "exit3", "exit_code", "gen_named", "gen_seedonly")]
     for group, name in TAPE_TESTS.items():
         d = problems.get(name)["dir"]

@@ -19,6 +19,7 @@
 #include <mutex>
 #include <sstream>
 #include <thread>
+#include "arena.hpp"
 #include "compare.hpp"
 #include "pool.hpp"
 #include "server.hpp"
@@ -31,6 +32,7 @@ struct Config {
     std::string size_dist = "uniform";  // sizes of random recipes: uniform on 1..max_size, or log-uniform
     std::string recipes = "guided";  // guided: use picked/mutated recipes; random: pick but ignore
     int max_size = 200, variants = 1, workers = 1, timeout_ms = 2000, extra_ops = 0;
+    long long arena_mb = 1024;  // tape arena size (v2 tape recipes only; no arena is created otherwise)
     long long tests = 1000, seed = 1;
     double time_limit = 60, write_frac = 0;
 };
@@ -58,6 +60,7 @@ struct FirstNote {  // first ref_fail / checker_error: recorded for inspection, 
 
 static Config cfg;
 static std::vector<std::unique_ptr<Pool>> pools;  // 1 shared, 1 per worker (noshare), none (random)
+static std::unique_ptr<Arena> arena;               // tape words + draw logs (v2 tape recipes, Step 2d); null otherwise
 static std::vector<std::vector<uint8_t>> seen;      // random only: per-worker OR of class maps
 static std::vector<Stats> stats;
 static std::atomic<long long> started{0}, completed{0};
@@ -254,7 +257,7 @@ int main(int argc, char** argv) {
         if (!gen_argv(cfg.gen_template, tmp)) return 2;
     }
     I("--max-size", cfg.max_size), I("--variants", cfg.variants), I("--workers", cfg.workers), I("--tests", cfg.tests);
-    I("--seed", cfg.seed), I("--extra-ops", cfg.extra_ops), I("--timeout-ms", cfg.timeout_ms);
+    I("--seed", cfg.seed), I("--extra-ops", cfg.extra_ops), I("--timeout-ms", cfg.timeout_ms), I("--arena-mb", cfg.arena_mb);
     D("--time-limit", cfg.time_limit), D("--write-frac", cfg.write_frac);
     if (cfg.size_dist != "uniform" && cfg.size_dist != "log") { fprintf(stderr, "--size-dist uniform|log\n"); return 2; }
     if (cfg.recipes != "guided" && cfg.recipes != "random") { fprintf(stderr, "--recipes guided|random\n"); return 2; }
@@ -313,6 +316,8 @@ int main(int argc, char** argv) {
     fprintf(f, "  \"outcomes\": {\"ok\": %lld, \"WA\": %lld, \"RE\": %lld, \"TLE\": %lld, \"invalid\": %lld, \"gen_skip\": %lld, "
                "\"ref_fail\": %lld, \"checker_error\": %lld},\n",
             tot.ok, tot.WA, tot.RE, tot.TLE, tot.invalid, tot.gen_skip, tot.ref_fail, tot.checker_error);
+    fprintf(f, "  \"arena_bytes\": %zu, \"arena_full\": %llu,\n", arena ? arena->bytes() : 0,
+            (unsigned long long)(arena ? arena->arena_full() : 0));  // peak (the arena is append-only)
     fprintf(f, "  \"new_cov_reports\": %lld, \"cov_features\": %d, \"pool_entries\": %zu,\n  \"per_worker_tests\": [",
             tot.news, cov_features, entries);
     for (int w = 0; w < cfg.workers; w++) fprintf(f, "%s%lld", w ? ", " : "", stats[w].tests);

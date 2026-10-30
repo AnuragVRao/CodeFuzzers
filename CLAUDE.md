@@ -66,6 +66,9 @@ v2 work follows docs/v2_roadmap.md. Read it before any v2 task.
   input text. Mutation keeps the variant, perturbs size (clamped), draws a fresh seed.
   v2 (tape) recipes follow docs/tape_design.md. The v1 rule stays in force for all v1
   experiments and all scale experiments.
+- v2 tape arena (core/arena.hpp): tape words + draw logs of admitted v2 entries live in one
+  process-wide, append-only arena; a v2 pool entry (TapeEntry) holds only a handle into it.
+  The pool is a template on its entry type; v1 and scale runs use Entry and never touch the arena.
 - The shared pool lives only in C++. Python never touches it during a timed run.
 - Pool strategies: global mutex, sharded mutexes, shared_mutex (readers-writers),
   RCU-style snapshot (atomic shared_ptr swap), and no-sharing baseline.

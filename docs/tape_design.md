@@ -44,6 +44,16 @@ header {magic, cap, log_cap, in_off, out_off, log_off, out_len, log_len, consume
 - Process-wide, append-only, bump-allocated (atomic fetch_add) region with tape words + draw logs of admitted entries. Fully written before the handle is published under the pool lock; never modified afterwards; read without locks.
 - Locked pool work stays an O(1) handle copy. Arena full: no admission, count arena_full.
 - Scale experiments never allocate in the arena; their pool cost is unchanged from v1.
+- As built (core/arena.hpp, Step 2c): Arena reserves the region with mmap(MAP_NORESERVE), default 1 GiB (fuzzer --arena-mb).
+  store() = fetch_add + copy; the first allocation that does not fit closes the arena (later stores also fail, arena_full).
+  The caller checks pool->novel(cov) first, so only tapes that would be admitted are copied; a tape whose report() then
+  loses the race to another writer stays in the arena unused. arena_bytes in the run JSON = bytes used (= peak).
+- Handle: TapeHandle {offset, words, draws, input_hash} (24 bytes). Pool entry: TapeEntry = Entry's fields + TapeHandle
+  (48 bytes).
+- Entry-type choice: the pool (core/pool.hpp) is a template on its entry type. Pool, GlobalLock, ..., make_pool() are the
+  v1 instantiation with Entry (24 bytes, static_assert), so v1 and scale runs keep their entry size and Snapshot copy
+  cost; tape runs use make_pool<TapeEntry>(). The only addition to the v1 pools is a read-only virtual novel(cov),
+  which v1 code never calls.
 
 ### Mutation (--recipes tape)
 - Parent selection identical to v1 (same pool-use probability).
