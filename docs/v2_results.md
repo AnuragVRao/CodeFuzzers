@@ -210,3 +210,9 @@ Part 3 report script: results/raw/pilot/pilot_report.py, sha256
 6c2001e3d61a8d742df341ae92236e2d12aa674a1e5463469fc577662a34374e. It was copied there after
 docs/v2_pilot_raw.sha256 was made, so it is not in that manifest. tools/pilot_report.py is the same script with
 portable paths (problems.ROOT) and gives byte-identical output.
+
+Note on (d), added 2026-10-30: for majority_voting tape-noshare the observed root-found share (0.290) is about
+3.8 binomial standard errors below the predicted 0.412 (SE from the observed share, sqrt(0.29 x 0.71 / 200) = 0.032;
+3.5 SEs with the predicted share's SE), so the constant-rate model is only approximate there. Computing that arm's
+child productivity from the observed share instead (lambda_tape x (1 - 0.290) / ((1 - r) x lambda_fresh)) gives
+about 0.20x (0.205) instead of 0.170.
