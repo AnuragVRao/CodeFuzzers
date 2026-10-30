@@ -130,14 +130,14 @@ OUTPUT: diff summary, each test command + result, commit hash. If T1 fails, stop
 Scope: core/fs_runtime.cpp and its server side, the worker-side client in core/, tools/build.py only if linkage requires it. No mutation or pool changes. All existing --recipes modes unchanged.
 
 Requirements:
-1. One shm region per worker for its generator server, created by the worker, mapped by the server before fork, exposing the session pointer to the forked child.
+1. Reuse the existing coverage-memfd pattern (fd 197 for the fast binary, core/server.hpp start(), core/fuzzer.cpp:141-142): when tape mode is enabled, the GENERATOR server receives a tape memfd on fd 196, mapped by the worker and by the forked child. Extend the Request struct (core/fs_runtime.cpp:27) with tape fields (arm flag, in_len, fallback_zero, budget); the child arms the session pointer before main() only when the arm flag is set. Without tape mode, nothing about the generator server changes.
 2. Worker API: run_gen_with_tape(variant, size, seed, const uint64_t* in, size_t in_len, bool fallback_zero) -> {stdout, status, out-tape span, draw-log span, flags}. Spans point into shm; callers copy what they keep.
 3. Calls without a tape must leave the child's session pointer null.
 4. Worker threads never call fork().
 
 Tests:
 - T1. Golden check + selftest pass.
-- T2. Through the real fork-server: capture (empty input, seed S) then replay; stdout identical; repeat 1000 times on one problem with no shm/fd leaks (compare /proc/self/fd count and /dev/shm before/after).
+- T2. Through the real fork-server: capture (empty input, seed S) then replay; stdout identical; repeat 1000 times on one problem with no shm/fd leaks (fd count of the worker and server processes before/after (via /proc/<pid>/fd)).
 - T3. The budget exit code is reported as a distinct status, not a crash.
 - T4. Overhead: scale config, --recipes random, fixed 10,000 tests, --strategy rwlock, 8 workers, 10 repeats, before (git worktree) vs after. Spread = min-max range of the "before" repeats. STOP if the after-median tests_per_sec differs from the before-median by more than 5% AND lies outside the before min-max range.
 
@@ -155,6 +155,7 @@ Requirements:
 3. Scale experiments must keep sizeof(v1 Entry) and v1 Snapshot copy cost (e.g. template the pool on the entry type, or a separate tape entry type). Document the choice in a comment and in docs/tape_design.md.
 4. Arena full: skip admission, count arena_full.
 5. Mention the arena in CLAUDE.md design rules without changing v1 rules.
+6. Report peak arena_bytes per run in the JSON.
 
 Tests:
 - T1. Golden check + selftest pass.
