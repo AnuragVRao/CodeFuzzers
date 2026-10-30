@@ -96,6 +96,8 @@ v2 work follows docs/v2_roadmap.md. Read it before any v2 task.
   the experiment, shuffled with random.Random(1000 + r); a discarded warm-up run starts each session.
   Machine drift therefore cannot line up with one strategy.
 - Scale = weak scaling: tests = 2500 x workers; speed-up = throughput ratio (tests/s vs noshare @ 1).
+- Scale results are only compared within one build (commit). Never mix v1-build and v2-build scale
+  numbers in one comparison.
 - "hunt" is exploratory (30 repeats, all hard-tier problems); "hunt-focus" (100 repeats, 8 workers,
   the 3 hard-tier problems with the most tests-to-bug; constant FOCUS_PROBLEMS in tools/run.py,
   recorded in results/raw/hunt-focus/focus.json) is the confirmatory test with its own Holm family.
