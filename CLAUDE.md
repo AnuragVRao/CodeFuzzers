@@ -50,6 +50,11 @@ v2 work follows docs/v2_roadmap.md. Read it before any v2 task.
   * fast crashes                      → bug, kind "RE"
   * fast times out                    → bug, kind "TLE"
   * both exit 0, outputs disagree     → bug, kind "WA"
+  * custom checker (testlib exit code; checker_outcome() in core/compare.hpp, same mapping in
+    tools/problems.py): 0 → "ok"; 1 _wa, 2 _pe, 4 _dirt, 8 _unexpected_eof → bug, kind "WA";
+    3 _fail → "ref_fail" (reference judged wrong; not a bug, counted separately);
+    killed by a signal, timed out, or any other exit code → "checker_error" (not a bug, counted
+    separately). The first ref_fail / checker_error recipe is stored in the run JSON.
 - Sizes are always clamped to max_size from fuzz_config.json.
 - tests_to_bug = number of tests up to and including the first failing one (always >= 1).
 - Dataset/bugs.json: one planted bug per problem with measured "rate" (% at sizes 5/20/max),

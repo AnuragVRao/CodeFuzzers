@@ -121,10 +121,24 @@ def _judge(b, inp, out, ans, times):
     if rf != 0:
         return "RE"
     if b["checker_kind"] == "custom":
-        same = subprocess.run([b["checker"], str(inp), str(out), str(ans)], capture_output=True).returncode == 0
-    else:
-        same = out.read_bytes().split() == ans.read_bytes().split()
-    return "ok" if same else "WA"
+        return run_checker([b["checker"], str(inp), str(out), str(ans)])
+    return "ok" if out.read_bytes().split() == ans.read_bytes().split() else "WA"
+
+
+def checker_outcome(rc):
+    """testlib checker exit code -> outcome; same mapping as checker_outcome() in core/compare.hpp.
+    rc: exit code, -signal if killed, None if timed out. 0 ok; 1 _wa, 2 _pe, 4 _dirt, 8 _unexpected_eof -> "WA";
+    3 _fail (reference judged wrong) -> "ref_fail"; signal, timeout or any other code -> "checker_error"."""
+    return "ok" if rc == 0 else "WA" if rc in (1, 2, 4, 8) else "ref_fail" if rc == 3 else "checker_error"
+
+
+def run_checker(cmd, timeout=TIMEOUT):
+    """Run a checker command line -> checker_outcome() of its exit status."""
+    try:
+        rc = subprocess.run(cmd, capture_output=True, timeout=timeout).returncode
+    except subprocess.TimeoutExpired:
+        rc = None
+    return checker_outcome(rc)
 
 
 def _temp_files():
