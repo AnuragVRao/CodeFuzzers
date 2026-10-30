@@ -57,17 +57,18 @@ def main():
         stats[p["name"], s][kind] += 1
         ms[p["name"]] = [max(ms[p["name"]][0], mf), max(ms[p["name"]][1], mb)]
 
-    cols = ["ok", *BUGS, "invalid", "gen_skip", "max_sol_ms", "max_brute_ms"]
+    counts = ["ok", *BUGS, "invalid", "gen_skip", "ref_fail", "checker_error"]
+    cols = counts + ["max_sol_ms", "max_brute_ms"]
     w = max(len(p["name"]) for p in probs)
     tot = Counter()
     print(f"{'problem':<{w}} | " + " | ".join(cols))
     for p in probs:
         c = sum((stats[p["name"], s] for s in sizes), Counter())
         tot += c
-        vals = [c[k] for k in cols[:6]] + [f"{x:.1f}" for x in ms[p["name"]]]
+        vals = [c[k] for k in counts] + [f"{x:.1f}" for x in ms[p["name"]]]
         print(f"{p['name']:<{w}} | " + " | ".join(f"{v:>{len(k)}}" for k, v in zip(cols, vals)))
     print(f"\n{len(probs)} problems, fast={a.fast}, seeds 1..{a.seeds}, sizes={sizes}: " +
-          ", ".join(f"{k}={tot[k]}" for k in cols[:6]) + f"  ({time.time() - t0:.1f}s)")
+          ", ".join(f"{k}={tot[k]}" for k in counts) + f"  ({time.time() - t0:.1f}s)")
 
     if a.sizes:
         heads = [f"bugs@{s}" for s in sizes]
