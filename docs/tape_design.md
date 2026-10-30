@@ -9,6 +9,7 @@ Make pool entries steerable. A v2 recipe = (variant, size, seed, tape). The same
 
 ### Words and draws
 - A tape is a sequence of uint64 words. With a session active, Random's raw next() returns the next input-tape word while any remain, otherwise the instance's own xoshiro (seeded from the constructor seed exactly as in v1), or 0 if fallback_zero is set.
+- The instance's own xoshiro stream does not advance while input-tape words are consumed; past the end of the tape it starts from the seed's first word. Replay never reaches the fallback because a stored tape is the full consumed sequence; a mutated child has a fresh seed, so its fallback words are new.
 - Every word returned by raw next() is appended to the OUTPUT tape. An empty input tape therefore reproduces v1 exactly, and the output tape is exactly the consumed words.
 - A draw = one call to next(upper); it may consume several words (mask + reject). The draw log records, per draw, (index of the ACCEPTED word in the output tape, upper).
 - Draw value = accepted_word & mask(upper), always. Draw-level mutation replaces the WHOLE accepted word with v in [0, upper] (high bits zero). Since v fits under the mask it is accepted first try; earlier rejected words still reject; later words do not shift unless the new value changes how many draws follow (e.g. n).
@@ -20,6 +21,7 @@ Make pool entries steerable. A v2 recipe = (variant, size, seed, tape). The same
 
 ### Shared memory (per worker, generator server only)
 header {magic, version, in_len, out_len, log_len, flags, budget, fallback_zero} | input words[CAP] | output words[CAP] | draw log[LOGCAP].
+- Layout rule: the shm header contains ONLY offsets, lengths, flags and counters, never pointers. The child builds its local session struct (pointers) from the mapping after fork, before main().
 - CAP = 97,930 words, LOGCAP = 79,446 draw-log entries: 2x the largest raw-word and draw counts over ALL 37
   generator binaries, measured with an instrumented copy of random.h (scratchpad only):
   - all 37: seeds 1..2000 at size 200, seeds 7919k (k = 1..20) at every size 1..200, golden seeds at 200
