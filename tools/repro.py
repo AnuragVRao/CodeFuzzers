@@ -3,7 +3,8 @@
 Usage: python3 tools/repro.py <problem> <bug-dir>
 Regenerates the input from <bug-dir>/recipe.txt and checks it equals input.txt, then runs ref
 (brute) and fast_bug from build/<problem>/ directly on input.txt and compares them with the
-problem's rule (exact tokens or checker). check_input() is reused by tools/shrink.py.
+problem's rule (exact tokens, or the checker via problems.run_checker: only "WA" is a MISMATCH).
+check_input() is reused by tools/shrink.py.
 """
 import subprocess, sys, tempfile
 from pathlib import Path
@@ -49,8 +50,10 @@ def check_input(name, inp):
         with tempfile.TemporaryDirectory() as t:
             fo, fa = Path(t) / "out", Path(t) / "ans"
             fo.write_bytes(out_fast), fa.write_bytes(out_ref)
-            r = subprocess.run([str(b / "checker"), str(inp), str(fo), str(fa)], capture_output=True, text=True)
-            verdict = "agree (checker ok)" if r.returncode == 0 else f"MISMATCH: WA (checker: {r.stderr.strip()[:200]})"
+            outcome, msg = problems.run_checker([str(b / "checker"), str(inp), str(fo), str(fa)], TIMEOUT, with_message=True)
+            verdict = {"ok": "agree (checker ok)", "WA": f"MISMATCH: WA (checker: {msg})",
+                       "ref_fail": f"REF_FAIL (checker _fail, not a bug: {msg})",
+                       "checker_error": f"CHECKER_ERROR (not a bug: {msg})"}[outcome]
     else:
         verdict = "agree" if out_fast.split() == out_ref.split() else "MISMATCH: WA (tokens differ)"
         a, b2 = out_ref.decode().splitlines(), out_fast.decode().splitlines()

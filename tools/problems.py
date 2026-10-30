@@ -132,13 +132,15 @@ def checker_outcome(rc):
     return "ok" if rc == 0 else "WA" if rc in (1, 2, 4, 8) else "ref_fail" if rc == 3 else "checker_error"
 
 
-def run_checker(cmd, timeout=TIMEOUT):
-    """Run a checker command line -> checker_outcome() of its exit status."""
+def run_checker(cmd, timeout=TIMEOUT, with_message=False):
+    """Run a checker command line -> checker_outcome() of its exit status
+    (or (outcome, first 200 chars of the checker's stderr) with with_message)."""
     try:
-        rc = subprocess.run(cmd, capture_output=True, timeout=timeout).returncode
+        r = subprocess.run(cmd, capture_output=True, timeout=timeout)
+        rc, msg = r.returncode, r.stderr.decode(errors="replace").strip()[:200]
     except subprocess.TimeoutExpired:
-        rc = None
-    return checker_outcome(rc)
+        rc, msg = None, "timeout"
+    return (checker_outcome(rc), msg) if with_message else checker_outcome(rc)
 
 
 def _temp_files():
