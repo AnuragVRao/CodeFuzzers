@@ -17,9 +17,15 @@ v2 work follows docs/v2_roadmap.md. Read it before any v2 task.
     fs_runtime.cpp  fork-server + trace-pc coverage runtime linked into every binary
     server.hpp      client side (posix_spawn, pipes, memfd coverage map)
     pool.hpp        Pool interface + 5 strategies (global, sharded, rwlock, snapshot, noshare)
-    fuzzer.cpp      the multi-threaded fuzzer (scale / hunt), JSON summary
+    fuzzer.cpp      the multi-threaded fuzzer (scale / hunt; v2 --recipes tape, --tape-capture, --op-log), JSON summary
     pool_bench.cpp  pool-only micro-benchmark and --check; smoke.cpp single-threaded e2e test
-    compare.hpp     token comparison; tests/ fork-server edge-case binaries + server_test
+    compare.hpp     token comparison, checker_outcome(), hash_bytes()
+    arena.hpp       v2 tape arena + TapeHandle/TapeEntry; mutate.hpp  v2 tape mutation operators
+    part2.cpp       v2 Step 2e Part 2 children generator (run by tools/part2.py)
+    tests/          fork-server edge cases (server_test + crash/hang/exit3/exit_code/gen_named/gen_seedonly),
+                    checker_test, tape_test (random.h sessions), tape_server_test + gen_tape_toy (tape memfd),
+                    tape_replay_check (admitted entries replay), arena_test (arena stress, plain + TSan),
+                    golden_gen.json (golden generator hashes)
 - tools/            Python 3.12 (stdlib + requirements.txt):
     build.py        builds everything into build/ (--force rebuilds all)
     run.py          experiment orchestrator (randomised blocks, resumable, git-stamped)
@@ -28,11 +34,20 @@ v2 work follows docs/v2_roadmap.md. Read it before any v2 task.
     sanity.py       plain gen/brute/fast check; tier_bugs.py measures planted-bug rates
     shrink.py, shrink_scaling.py, bug_gallery.py, repro.py   shrinking and bug gallery
     llm.py          Ollama explain/gen (random_api.txt is part of the gen prompt)
-    problems.py     shared helpers (manifest, compile, run_test); style.py strategy colours
+    problems.py     shared helpers (manifest, compile, run_test, run_checker); style.py strategy colours
     selftest.sh     build + all self-tests, PASS/FAIL per item
+    golden_gen.py   golden generator hashes (--check: runtime-linked and build/plain/ generators)
+    checker_agree_test.py  C++ vs Python checker-outcome mapping
+    replay_first_bugs.py   replays v1 first bugs (Step 0.2 evidence -> results/derived/)
+    analyze.py, server.py, e2e_test.sh   analysis server (upload, queue, SSE) and its end-to-end test
+    part2.py        v2 Part 2 pipeline + mut_similarity; fp_sim.py  pilot false-PROCEED simulation
+- docs/             v2_roadmap.md (v2 plan + status), tape_design.md (v2 spec as built), v2_pilot_plan.md
+                    (pre-registration), known_issues.md, v1_data_archive.md + v1_archive.sha256, DEMO.md
+- examples/         sample uploads for the analysis server (incl. _guardrails/)
+- .gitattributes    *.md text eol=lf
 - build/            compiled binaries (gitignored); build/plain/ = plain binaries for Python tools
-- results/          run outputs (gitignored): raw/<experiment>/, runs.csv, summary.json, charts/,
-                    bugs/ (gallery), llm/ (answers + prompts)
+- results/          run outputs (gitignored): raw/<experiment>/ (v2: raw/pilot/), runs.csv, summary.json,
+                    charts/, bugs/ (gallery), llm/ (answers + prompts), derived/ (Step 0.2 replay), part2/
 - dashboard/        Vite + React + Recharts, reads results/summary.json, no backend;
                     Node 22 (.nvmrc) via nvm: `source ~/.nvm/nvm.sh` before npm
 
