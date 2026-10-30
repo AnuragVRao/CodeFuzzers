@@ -3,10 +3,12 @@
 gen_alt) for seeds {1, 2, 3, 12345, 987654321} x sizes {1, 5, 50, 200}, stored in
 core/tests/golden_gen.json under "<problem>/<binary>/<seed>/<size>". A non-zero exit is part of the
 value ("<sha256> rc=<n>"), so a generator that starts or stops skipping a seed is also a mismatch.
+--check compares two flavours against the same hashes: the runtime-linked binaries (fs_runtime.o,
+cf_session defined) and the build/plain/ generators (no runtime, cf_session weak and absent).
 
-Usage: python3 tools/golden_gen.py           record (overwrites the golden file)
-       python3 tools/golden_gen.py --check   recompute, print every mismatch, exit 1 on any
-Run tools/build.py (--force after header changes) first.
+Usage: python3 tools/golden_gen.py           record from the runtime-linked binaries (overwrites the file)
+       python3 tools/golden_gen.py --check   recompute both flavours, print every mismatch, exit 1 on any
+Run tools/build.py first (build/plain/ generators are compiled here if out of date).
 """
 import argparse, hashlib, json, subprocess, sys
 from concurrent.futures import ThreadPoolExecutor
@@ -25,9 +27,18 @@ def jobs():
                     yield f"{p['name']}/{BINARIES[v]}/{seed}/{size}"
 
 
-def digest(key):
+def exe_path(key, plain):
+    name, binary = key.split("/")[:2]
+    if not plain:
+        return problems.ROOT / "build" / name / binary
+    p = problems.get(name)
+    v = {b: v for v, b in BINARIES.items()}[binary]
+    return problems.compile(p["dir"] / "gen" / f"{v}.cpp", problems.PLAIN / name / v, problems.flags(p["dir"]))
+
+
+def digest(key, plain=False):
     name, binary, seed, size = key.split("/")
-    exe = problems.ROOT / "build" / name / binary
+    exe = exe_path(key, plain)
     r = subprocess.run([str(exe), seed, size], capture_output=True, timeout=30)
     h = hashlib.sha256(r.stdout).hexdigest()
     return key, h if r.returncode == 0 else f"{h} rc={r.returncode}"
@@ -44,11 +55,20 @@ def main():
         print(f"recorded {len(got)} entries -> {GOLDEN.relative_to(problems.ROOT)}")
         return 0
     want = json.loads(GOLDEN.read_text())
-    bad = [k for k in sorted(want.keys() | got.keys()) if want.get(k) != got.get(k)]
-    for k in bad:
-        print(f"MISMATCH {k}: golden={want.get(k)} now={got.get(k)}")
-    print(f"{len(want) - len(bad)}/{len(want)} entries match" + (f", {len(bad)} mismatches" if bad else ""))
-    return 1 if bad else 0
+    keys = sorted(want)
+    for p in problems.load():  # compile build/plain/ generators once, before the parallel runs
+        for v in p["variants"]:
+            exe_path(f"{p['name']}/{BINARIES[v]}", True)
+    with ThreadPoolExecutor() as ex:
+        plain = dict(zip(keys, (h for _, h in ex.map(lambda k: digest(k, True), keys))))
+    failed = 0
+    for flavour, now in (("runtime-linked", got), ("build/plain", plain)):
+        bad = [k for k in sorted(want.keys() | now.keys()) if want.get(k) != now.get(k)]
+        for k in bad:
+            print(f"MISMATCH {flavour} {k}: golden={want.get(k)} now={now.get(k)}")
+        print(f"{flavour}: {len(want) - len(bad)}/{len(want)} entries match" + (f", {len(bad)} mismatches" if bad else ""))
+        failed |= bool(bad)
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":
