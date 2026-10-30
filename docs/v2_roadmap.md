@@ -139,7 +139,7 @@ Tests:
 - T1. Golden check + selftest pass.
 - T2. Through the real fork-server: capture (empty input, seed S) then replay; stdout identical; repeat 1000 times on one problem with no shm/fd leaks (fd count of the worker and server processes before/after (via /proc/<pid>/fd)).
 - T3. The budget exit code is reported as a distinct status, not a crash.
-- T4. Overhead: scale config, --recipes random, fixed 10,000 tests, --strategy rwlock, 8 workers, 10 repeats, before (git worktree) vs after. Spread = min-max range of the "before" repeats. STOP if the after-median tests_per_sec differs from the before-median by more than 5% AND lies outside the before min-max range.
+- T4. Overhead: scale config on majority_voting, --recipes random, fixed 10,000 tests, --strategy rwlock, 8 workers, 10 repeats, before (git worktree) vs after. Spread = min-max range of the "before" repeats. STOP if the after-median tests_per_sec differs from the before-median by more than 5% AND lies outside the before min-max range.
 
 OUTPUT: diff summary, test results, T4 numbers, commit hash.
 

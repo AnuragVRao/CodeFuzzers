@@ -17,10 +17,14 @@ Make pool entries steerable. A v2 recipe = (variant, size, seed, tape). The same
 ### Session control (random.h)
 - Session pointer to a session struct: defined (strong symbol) in core/fs_runtime.cpp and core/tape_file_runtime.cpp; declared weak extern in random.h, which checks the symbol's address before dereferencing. Absent symbol (build/plain/) or null = exact v1 behaviour (golden test must pass). global_gen unchanged.
 - Budget: if total words consumed exceed the session budget, set a flag and _exit with a dedicated code; the fuzzer counts gen_budget_exceeded and treats it as gen_skip.
+- Budget value: 1,000,000 words, fixed; the default for every armed run from Step 2d on (about 10x CAP, so long tapes overflow long before they hit the budget). Exit code 85; reported by the server client as status BUDGET.
 - Output tape or draw log over shm capacity: set an overflow flag; the test still runs, the child is not admissible (count tape_overflow).
 
 ### Shared memory (per worker, generator server only)
-header {magic, version, in_len, out_len, log_len, flags, budget, fallback_zero} | input words[CAP] | output words[CAP] | draw log[LOGCAP].
+header {magic, cap, log_cap, in_off, out_off, log_off, out_len, log_len, consumed, flags} (80 bytes, padded to 128) | input words[CAP] | output words[CAP] | draw log[LOGCAP] (16-byte entries {accepted-word index, upper}).
+- magic carries the version in its low bits ("CFTAPE" v1). cap, log_cap and the byte offsets are set once by the worker. in_len, budget and fallback_zero travel in the per-test Request (with the arm flag), not in the header.
+- flags: OVERFLOW = 1, BUDGET = 2, COMPLETE = 4. Before forking an armed request the SERVER clears out_len, log_len, consumed and flags. On a normal exit (exit() or return from main, any exit code) the child writes out_len and log_len (capped at CAP / LOGCAP), consumed (all words, may exceed CAP), and LAST flags with COMPLETE. A budget exit (_Exit 85), a crash or a timeout writes no header field, so COMPLETE stays 0.
+- The output-tape and draw-log spans are valid only when COMPLETE is set (and only until the next request on that server). Step 2d must never admit a child without COMPLETE (and never one with OVERFLOW).
 - Layout rule: the shm header contains ONLY offsets, lengths, flags and counters, never pointers. The child builds its local session struct (pointers) from the mapping after fork, before main().
 - CAP = 97,930 words, LOGCAP = 79,446 draw-log entries: 2x the largest raw-word and draw counts over ALL 37
   generator binaries, measured with an instrumented copy of random.h (scratchpad only):
