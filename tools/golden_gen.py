@@ -3,11 +3,12 @@
 gen_alt) for seeds {1, 2, 3, 12345, 987654321} x sizes {1, 5, 50, 200}, stored in
 core/tests/golden_gen.json under "<problem>/<binary>/<seed>/<size>". A non-zero exit is part of the
 value ("<sha256> rc=<n>"), so a generator that starts or stops skipping a seed is also a mismatch.
---check compares two flavours against the same hashes: the runtime-linked binaries (fs_runtime.o,
-cf_session defined) and the build/plain/ generators (no runtime, cf_session weak and absent).
+--check compares three flavours against the same hashes: the runtime-linked binaries (fs_runtime.o,
+cf_session defined), the build/plain/ generators (no runtime, cf_session weak and absent) and the build/tape/
+generators (tape_file_runtime.o, run with no CF_TAPE_* variable: an armed session with an empty tape).
 
 Usage: python3 tools/golden_gen.py           record from the runtime-linked binaries (overwrites the file)
-       python3 tools/golden_gen.py --check   recompute both flavours, print every mismatch, exit 1 on any
+       python3 tools/golden_gen.py --check   recompute all three flavours, print every mismatch, exit 1 on any
 Run tools/build.py first (build/plain/ generators are compiled here if out of date).
 """
 import argparse, hashlib, json, subprocess, sys
@@ -29,6 +30,8 @@ def jobs():
 
 def exe_path(key, plain):
     name, binary = key.split("/")[:2]
+    if plain == "tape":
+        return problems.ROOT / "build" / "tape" / name / binary
     if not plain:
         return problems.ROOT / "build" / name / binary
     p = problems.get(name)
@@ -61,8 +64,9 @@ def main():
             exe_path(f"{p['name']}/{BINARIES[v]}", True)
     with ThreadPoolExecutor() as ex:
         plain = dict(zip(keys, (h for _, h in ex.map(lambda k: digest(k, True), keys))))
+        tape = dict(zip(keys, (h for _, h in ex.map(lambda k: digest(k, "tape"), keys))))
     failed = 0
-    for flavour, now in (("runtime-linked", got), ("build/plain", plain)):
+    for flavour, now in (("runtime-linked", got), ("build/plain", plain), ("build/tape", tape)):
         bad = [k for k in sorted(want.keys() | now.keys()) if want.get(k) != now.get(k)]
         for k in bad:
             print(f"MISMATCH {flavour} {k}: golden={want.get(k)} now={now.get(k)}")

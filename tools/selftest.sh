@@ -2,7 +2,7 @@
 # End-to-end self-test: build everything, then the golden generator hashes, the fork-server edge cases
 # and checker outcome mapping (C++, and Python agreeing with it), the random.h tape session (in-process and
 # through the fork-server), tape recipes (strategy guard, admitted entries replay, --op-log changes nothing),
-# Part 2 (similarity unit tests, pipeline structure),
+# Part 2 (similarity unit tests, pipeline structure), the Step S shrinker (negative controls, determinism),
 # the pool correctness
 # check (plain and under ThreadSanitizer, with ASLR off because GCC 13 TSan needs it), the tape arena stress
 # test (plain and TSan), the
@@ -93,6 +93,7 @@ check "tape recipes: admitted entries replay (T2)"    tape_smoke
 check "--op-log changes no result (log on vs off)"    oplog_check
 check "Part 2 similarity unit tests"                  python3 tools/part2.py --selftest
 check "Part 2 pipeline (range_add_range_min, seed 7)" part2_check
+check "shrinker: negative controls, determinism"      python3 tools/shrink_test.py --quick
 check "checker outcome mapping (checker_test)"        build/tests/checker_test
 check "C++ and Python checker mapping agree"          python3 tools/checker_agree_test.py
 check "pool correctness (pool_bench --check)"         build/pool_bench --check

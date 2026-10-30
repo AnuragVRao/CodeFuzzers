@@ -5,6 +5,8 @@ build/fs_runtime.o (no coverage) is linked into every problem binary. Per proble
   input on stdin);  path-tracking (-O2 trace-pc,
   -no-pie): fast_sol, fast_bug.  Also smoke, pool_bench(_tsan), fuzzer(_tsan), part2, tests/* (tape_test_<group>:
   core/tests/tape_test.cpp around one real generator, no runtime).
+build/tape/<name>/: gen, gen_alt linked with build/tape_file_runtime.o (file-based tape sessions, for the Step S
+shrinker in tools/shrink.py; no fork server).
 Rebuilds when a target is older than its listed deps (problem binaries: source, fs_runtime.o and every header
 it may include, see problems.header_deps); --force rebuilds everything.
 """
@@ -16,6 +18,7 @@ import problems
 ROOT = problems.ROOT
 BUILD, CORE = ROOT / "build", ROOT / "core"
 RUNTIME = BUILD / "fs_runtime.o"
+TAPE_RT = BUILD / "tape_file_runtime.o"
 COV = ["-fsanitize-coverage=trace-pc", "-no-pie"]
 # core/tests/tape_test.cpp is built once per group around one real generator (tape_test_<group>)
 TAPE_TESTS = {"arrays": "majority_voting", "strings": "longest_common_substring",
@@ -48,6 +51,9 @@ def problem_targets(p):
              for name, src in srcs.items()]
     for name, src in (("fast_sol", d / "sol.cpp"), ("fast_bug", d / "sol_bug.cpp")):
         jobs.append((out / name, ["g++", *fl, *COV, "-o", str(out / name), str(src), str(RUNTIME)], [*hdr(src), RUNTIME]))
+    tape = BUILD / "tape" / p["name"]  # build/tape/: generators with the file-based tape runtime
+    jobs += [(tape / name, ["g++", *fl, "-o", str(tape / name), str(src), str(TAPE_RT)], [*hdr(src), TAPE_RT])
+             for name, src in srcs.items() if name in ("gen", "gen_alt")]
     return jobs
 
 
@@ -86,10 +92,13 @@ def main():
     ap.add_argument("--force", action="store_true", help="rebuild everything")
     FORCE = ap.parse_args().force
     rt = CORE / "fs_runtime.cpp"
-    results = [build(RUNTIME, [*CXX, "-O2", "-c", "-o", str(RUNTIME), str(rt)], [rt])]
-    if results[0][0] == "failed":
-        print(f"fs_runtime.o failed: {results[0][2]}")
-        return 1
+    trt = CORE / "tape_file_runtime.cpp"
+    results = [build(RUNTIME, [*CXX, "-O2", "-c", "-o", str(RUNTIME), str(rt)], [rt]),
+               build(TAPE_RT, [*CXX, "-O2", "-c", "-o", str(TAPE_RT), str(trt)], [trt])]
+    for status, out, err in results:
+        if status == "failed":
+            print(f"{out.name} failed: {err}")
+            return 1
     jobs = tool_targets()
     for p in problems.load():
         jobs += problem_targets(p)

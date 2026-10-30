@@ -27,7 +27,7 @@ def hunt_and_shrink(name, cfg):
     if bug is None:
         print(f"{name}: no bug found in 30 s")
         return
-    subprocess.run([sys.executable, str(ROOT / "tools/shrink.py"), name, str(d), "--workers", str(WORKERS)])
+    subprocess.run([sys.executable, str(ROOT / "tools/shrink.py"), "--old", name, str(d), "--workers", str(WORKERS)])
 
 
 def main():

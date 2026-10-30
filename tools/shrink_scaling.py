@@ -25,7 +25,7 @@ def main():
                     d.mkdir()
                     for f in ("input.txt", "recipe.txt"):
                         shutil.copy(src / f, d / f)
-                    subprocess.run([sys.executable, str(problems.ROOT / "tools/shrink.py"), p, str(d), "--workers", str(w)],
+                    subprocess.run([sys.executable, str(problems.ROOT / "tools/shrink.py"), "--old", p, str(d), "--workers", str(w)],
                                    check=True, capture_output=True)
                     info = json.loads((d / "shrunk" / "info.json").read_text())
                     rows.append(dict(problem=p, workers=w, repeat=r, wall_s=info["wall_s"], tests_used=info["tests_used"]))

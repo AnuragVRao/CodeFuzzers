@@ -22,6 +22,7 @@ v2 work follows docs/v2_roadmap.md. Read it before any v2 task.
     compare.hpp     token comparison, checker_outcome(), hash_bytes()
     arena.hpp       v2 tape arena + TapeHandle/TapeEntry; mutate.hpp  v2 tape mutation operators
     part2.cpp       v2 Step 2e Part 2 children generator (run by tools/part2.py)
+    tape_file_runtime.cpp  file-based tape sessions (CF_TAPE_* env vars) for the build/tape/ generators (Step S)
     tests/          fork-server edge cases (server_test + crash/hang/exit3/exit_code/gen_named/gen_seedonly),
                     checker_test, tape_test (random.h sessions), tape_server_test + gen_tape_toy (tape memfd),
                     tape_replay_check (admitted entries replay), arena_test (arena stress, plain + TSan),
@@ -32,7 +33,10 @@ v2 work follows docs/v2_roadmap.md. Read it before any v2 task.
     flatten.py -> aggregate.py -> plots.py   raw JSON -> runs.csv -> summary.json -> charts
     results_table.py  README key-results table from summary.json
     sanity.py       plain gen/brute/fast check; tier_bugs.py measures planted-bug rates
-    shrink.py, shrink_scaling.py, bug_gallery.py, repro.py   shrinking and bug gallery
+    shrink.py, shrink_scaling.py, bug_gallery.py, repro.py   shrinking and bug gallery (shrink.py: v2 tape +
+                    ddmin shrinker by default, the v1 generator-space shrinker behind --old)
+    shrink_run.py   Step S driver over the DEV / EVAL bug sets (capture check, new/old shrinker, cold replay);
+                    shrink_test.py  shrinker negative controls and determinism
     llm.py          Ollama explain/gen (random_api.txt is part of the gen prompt)
     problems.py     shared helpers (manifest, compile, run_test, run_checker); style.py strategy colours
     selftest.sh     build + all self-tests, PASS/FAIL per item
@@ -45,9 +49,11 @@ v2 work follows docs/v2_roadmap.md. Read it before any v2 task.
                     (pre-registration), known_issues.md, v1_data_archive.md + v1_archive.sha256, DEMO.md
 - examples/         sample uploads for the analysis server (incl. _guardrails/)
 - .gitattributes    *.md text eol=lf
-- build/            compiled binaries (gitignored); build/plain/ = plain binaries for Python tools
+- build/            compiled binaries (gitignored); build/plain/ = plain binaries for Python tools;
+                    build/tape/ = generators with tape_file_runtime.o (Step S shrinker)
 - results/          run outputs (gitignored): raw/<experiment>/ (v2: raw/pilot/), runs.csv, summary.json,
-                    charts/, bugs/ (gallery), llm/ (answers + prompts), derived/ (Step 0.2 replay), part2/
+                    charts/, bugs/ (gallery), llm/ (answers + prompts), derived/ (Step 0.2 replay), part2/,
+                    shrink/<set>[_old]/ (Step S)
 - dashboard/        Vite + React + Recharts, reads results/summary.json, no backend;
                     Node 22 (.nvmrc) via nvm: `source ~/.nvm/nvm.sh` before npm
 
