@@ -25,7 +25,7 @@ extern char** environ;
 struct TapeDraw { uint64_t index, upper; };  // = cf_draw in Dataset/common/random.h
 struct TapeHeader {                           // same layout in fs_runtime.cpp; byte offsets from the mapping
     uint64_t magic, cap, log_cap, in_off, out_off, log_off;  // set by start()
-    uint64_t out_len, log_len, consumed, flags;               // reset per run_tape(), written by the child at exit
+    uint64_t out_len, log_len, consumed, flags;               // cleared by the server per armed request, written by the child at exit
 };
 
 struct Server {
@@ -34,17 +34,19 @@ struct Server {
         int exit_code;  // exit status, or -signal number
         int us;         // wall time measured by the server
     };
-    struct TapeResult {  // spans point into the shared memory: valid until the next request, copy what you keep
+    struct TapeResult {  // spans point into the shared memory: valid only if complete, and only until the next request
         Result res;
+        bool complete;                           // the child exited normally and wrote its counters (TAPE_COMPLETE)
         const uint64_t* out;  size_t out_len;   // output tape (<= TAPE_CAP words)
         const TapeDraw* log;  size_t log_len;   // draw log (<= TAPE_LOGCAP entries)
         uint64_t consumed;                       // words consumed (> out_len when the tape overflowed)
-        uint32_t flags;                          // TAPE_OVERFLOW | TAPE_BUDGET
+        uint32_t flags;                          // TAPE_OVERFLOW | TAPE_BUDGET | TAPE_COMPLETE
     };
     static constexpr size_t MAP_SIZE = 1 << 16;
     static constexpr uint64_t TAPE_CAP = 97930, TAPE_LOGCAP = 79446;  // docs/tape_design.md
     static constexpr uint64_t TAPE_MAGIC = 0x4346544150450001ULL;
     static constexpr uint32_t TAPE_OVERFLOW = 1, TAPE_BUDGET = 2;     // = CF_TAPE_* in random.h
+    static constexpr uint32_t TAPE_COMPLETE = 4;                       // set last by a normally exiting child
     static constexpr int TAPE_BUDGET_EXIT = 85;                        // = CF_TAPE_BUDGET_EXIT in random.h
     unsigned char* cov_map = nullptr;  // non-null only when started with_cov
     std::string out_path;              // the child's stdout file (cf_out)
@@ -122,7 +124,6 @@ struct Server {
         TapeResult t{};
         if (!tape || in_len > TAPE_CAP) return t.res = {Result::CRASH, 126, 0}, t;
         if (in_len) memcpy((char*)tape + TAPE_IN, in, in_len * sizeof(uint64_t));
-        tape->out_len = tape->log_len = tape->consumed = tape->flags = 0;
         Request rq{};
         rq.arm = 1, rq.fallback_zero = fallback_zero, rq.in_len = in_len, rq.budget = budget;
         t.res = request(rq, a1, a2, timeout_ms);
@@ -130,6 +131,7 @@ struct Server {
         t.out = (const uint64_t*)((char*)tape + TAPE_OUT), t.out_len = tape->out_len;
         t.log = (const TapeDraw*)((char*)tape + TAPE_LOG), t.log_len = tape->log_len;
         t.consumed = tape->consumed, t.flags = tape->flags | (t.res.kind == Result::BUDGET ? TAPE_BUDGET : 0);
+        t.complete = t.flags & TAPE_COMPLETE;
         return t;
     }
 

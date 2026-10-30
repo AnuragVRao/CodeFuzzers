@@ -12,9 +12,12 @@
 //
 // Tape (generator servers only, docs/tape_design.md): with fd 196 open the server maps that memfd
 // (header of offsets/capacities/counters, then input words, output words, draw log; no pointers).
-// A request with arm set makes the child build a local session from the mapping and point
-// cf_session at it before main(); at exit it stores out_len/log_len (capped), consumed and flags in
-// the header. Unarmed requests leave cf_session null (exact v1 behaviour).
+// For a request with arm set the server first clears the header's counters and flags, then forks;
+// the child builds a local session from the mapping and points cf_session at it before main(). On a
+// normal exit (exit() / return from main) it stores out_len/log_len (capped) and consumed, and LAST
+// the flags with TAPE_COMPLETE. A budget exit (_Exit 85), crash or timeout writes no header field,
+// so the header stays cleared (COMPLETE = 0). Unarmed requests leave cf_session null (exact v1).
+
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -49,6 +52,7 @@ namespace {
 constexpr int TAPE_FD = 196, COV_FD = 197, REQ_FD = 198, REP_FD = 199;
 constexpr size_t MAP_SIZE = 1 << 16;
 constexpr uint64_t TAPE_MAGIC = 0x4346544150450001ULL;  // "CFTAPE" v1
+constexpr uint64_t TAPE_COMPLETE = 4;                  // header flag; 1, 2 = CF_TAPE_OVERFLOW, CF_TAPE_BUDGET
 
 struct Request {  // same layout in server.hpp
     int32_t timeout_ms;
@@ -61,7 +65,7 @@ static_assert(sizeof(Request) == 96 && sizeof(Reply) == 8, "protocol layout");
 
 struct TapeHeader {  // same layout in server.hpp; byte offsets from the start of the mapping
     uint64_t magic, cap, log_cap, in_off, out_off, log_off;  // set by the worker at start
-    uint64_t out_len, log_len, consumed, flags;               // reset per request, written by the child at exit
+    uint64_t out_len, log_len, consumed, flags;               // cleared by the server per armed request, written by the child at exit
 };
 static_assert(sizeof(TapeHeader) == 80, "protocol layout");
 
@@ -91,10 +95,11 @@ void redirect(const char* path, int flags, int target) {
     close(fd);
 }
 
-void store_tape() {  // atexit in an armed child: report the session's counters
+void store_tape() {  // atexit in an armed child: report the session's counters, COMPLETE last
     tape->out_len = session.out_len < session.out_cap ? session.out_len : session.out_cap;
     tape->log_len = session.log_len < session.log_cap ? session.log_len : session.log_cap;
-    tape->consumed = session.out_len, tape->flags = session.flags;
+    tape->consumed = session.out_len;
+    __atomic_store_n(&tape->flags, session.flags | TAPE_COMPLETE, __ATOMIC_RELEASE);
 }
 
 void arm_tape(const Request& rq) {  // child, before main(): session from offsets + request fields
@@ -136,6 +141,7 @@ __attribute__((constructor(101))) static void cf_init(int argc, char** argv, cha
         Request rq;
         if (!read_full(REQ_FD, &rq, sizeof rq)) _exit(0);  // client closed the pipe
         long long t0 = now_us();
+        if (rq.arm && tape) tape->out_len = tape->log_len = tape->consumed = tape->flags = 0;
         pid_t pid = fork();
         if (pid == 0) {  // child: become a normal run of main()
             if (idx_seed || idx_size) {

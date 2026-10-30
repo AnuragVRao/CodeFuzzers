@@ -5,6 +5,9 @@
 //      this process and the server unchanged after the 1000 rounds
 //   T3 all-zero tape + fallback_zero on a never-ending uniform_pair: status BUDGET (not CRASH)
 //   T5 CAP + 1000 words: run completes, overflow flag set, stdout == no-session stdout, out_len <= CAP
+//   T6 one server, in order: clean, crash (100 words then abort), clean, budget, clean, overflow, clean;
+//      incomplete runs show COMPLETE = 0 and none of the previous run's counters, clean runs match
+//      their own no-session output
 //   plus: run() on a tape server leaves the child's session null; run_tape() arms it
 // Prints PASS/FAIL per check; exit code 1 on any FAIL.
 #include <dirent.h>
@@ -59,9 +62,9 @@ int main() {
             GenTapeRun cap = run_gen_with_tape(gen, 0, 200, seed, nullptr, 0, false);
             std::vector<uint64_t> tape(cap.tape.out, cap.tape.out + cap.tape.out_len);  // spans die with the next request
             GenTapeRun rep = run_gen_with_tape(gen, 0, 200, seed + 100000, tape.data(), tape.size(), false);
-            bad += plain.kind != R::OK || cap.tape.res.kind != R::OK || cap.out != want || cap.tape.flags != 0 ||
+            bad += plain.kind != R::OK || cap.tape.res.kind != R::OK || cap.out != want || cap.tape.flags != Server::TAPE_COMPLETE ||
                    cap.tape.consumed != tape.size() || rep.tape.res.kind != R::OK || rep.out != cap.out ||
-                   rep.tape.consumed != tape.size() || rep.tape.log_len != cap.tape.log_len || rep.tape.flags != 0;
+                   rep.tape.consumed != tape.size() || rep.tape.log_len != cap.tape.log_len || rep.tape.flags != Server::TAPE_COMPLETE;
             max_words = std::max(max_words, tape.size());
             if (seed == 1) fd_self = fd_count(getpid()), fd_server = fd_count(gen[0].server_pid());
         }
@@ -88,12 +91,40 @@ int main() {
         R plain = toy[0].run("7", std::to_string(n), 5000);
         std::string want = slurp(out);
         GenTapeRun o = run_gen_with_tape(toy, 0, int(n), 7, nullptr, 0, false, 0, 5000);
-        check(plain.kind == R::OK && o.tape.res.kind == R::OK && (o.tape.flags & Server::TAPE_OVERFLOW) && o.out == want &&
+        check(plain.kind == R::OK && o.tape.res.kind == R::OK && o.tape.complete && (o.tape.flags & Server::TAPE_OVERFLOW) && o.out == want &&
                   o.tape.out_len <= Server::TAPE_CAP && o.tape.log_len <= Server::TAPE_LOGCAP && o.tape.consumed == n,
               "T5 " + std::to_string(n) + " words: completes, overflow flag " + std::to_string(o.tape.flags & 1) +
                   ", stdout == no-session stdout (" + std::to_string(want.size()) + " bytes), out_len " +
                   std::to_string(o.tape.out_len) + " <= CAP " + std::to_string(Server::TAPE_CAP) + ", log_len " +
                   std::to_string(o.tape.log_len) + ", consumed " + std::to_string(o.tape.consumed));
+    }
+
+    {  // T6
+        struct Step { const char* what; long long n; R::Kind kind; bool complete; uint64_t out_len, consumed; uint32_t flags; };
+        const uint64_t big = Server::TAPE_CAP + 1000;
+        const Step steps[] = {
+            {"clean 50", 50, R::OK, true, 50, 50, Server::TAPE_COMPLETE},
+            {"crash after 100 words", -2, R::CRASH, false, 0, 0, 0},
+            {"clean 60", 60, R::OK, true, 60, 60, Server::TAPE_COMPLETE},
+            {"budget", 0, R::BUDGET, false, 0, 0, Server::TAPE_BUDGET},
+            {"clean 70", 70, R::OK, true, 70, 70, Server::TAPE_COMPLETE},
+            {"overflow", (long long)big, R::OK, true, Server::TAPE_CAP, big, Server::TAPE_OVERFLOW | Server::TAPE_COMPLETE},
+            {"clean 80", 80, R::OK, true, 80, 80, Server::TAPE_COMPLETE}};
+        std::vector<uint64_t> zeros(16, 0);
+        for (const Step& st : steps) {
+            bool budget = st.kind == R::BUDGET;
+            std::string want;
+            if (st.n > 0) toy[0].run("9", std::to_string(st.n), 5000), want = slurp(out);
+            GenTapeRun r = run_gen_with_tape(toy, 0, int(st.n), 9, budget ? zeros.data() : nullptr, budget ? zeros.size() : 0,
+                                             budget, budget ? 1000000 : 0, 5000);
+            bool ok = r.tape.res.kind == st.kind && r.tape.complete == st.complete && r.tape.out_len == st.out_len &&
+                      r.tape.consumed == st.consumed && r.tape.flags == st.flags && (st.n <= 0 || r.out == want);
+            char msg[256];
+            snprintf(msg, sizeof msg, "T6 %-22s status %d, COMPLETE %d, out_len %llu, consumed %llu, flags %u%s", st.what,
+                     r.tape.res.kind, r.tape.complete, (unsigned long long)r.tape.out_len, (unsigned long long)r.tape.consumed,
+                     r.tape.flags, st.n > 0 ? (r.out == want ? ", stdout == no-session" : ", stdout DIFFERS") : "");
+            check(ok, msg);
+        }
     }
 
     {  // session pointer: null for run(), armed for run_tape()
