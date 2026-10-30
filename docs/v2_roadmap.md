@@ -24,7 +24,7 @@ This file is the single source of truth for the v2 work. Claude Code: read this 
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| 0 | Groundwork: golden test, ref_fail/checker_error outcomes, CLAUDE.md fixes, known issues | todo | |
+| 0 | Groundwork: golden test, ref_fail/checker_error outcomes, CLAUDE.md fixes, known issues | done | 714e5f4 |
 | 2.0 | Feasibility check + tape design spec | todo | |
 | 2a | Tape session support in random.h | todo | |
 | 2b | Shared memory to generator fork-server | todo | |
