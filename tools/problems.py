@@ -29,10 +29,17 @@ def flags(pdir, opt="-O2"):
     return [opt, "-std=c++17", "-w", "-I", str(DATASET / "common"), "-I", str(pdir), "-I", str(pdir / "gen")]
 
 
+def header_deps(src, flags):
+    """Headers src may include: every *.h / *.hpp in src's own directory and in each -I directory of
+    flags (a superset of what it does include: Dataset/common/*.h, params.h, gen/*.hpp, ...)."""
+    dirs = [Path(src).parent] + [Path(flags[i + 1]) for i, f in enumerate(flags[:-1]) if f == "-I"]
+    return sorted({h for d in dirs for h in d.iterdir() if h.suffix in (".h", ".hpp")})
+
+
 def compile(src, out, flags):
-    """g++ src -> out, skipped if out is newer than src. Raises on compile error."""
+    """g++ src -> out, skipped if out is newer than src and every header_deps(). Raises on compile error."""
     src, out = Path(src), Path(out)
-    if out.exists() and out.stat().st_mtime > src.stat().st_mtime:
+    if out.exists() and all(out.stat().st_mtime > d.stat().st_mtime for d in [src, *header_deps(src, flags)]):
         return out
     out.parent.mkdir(parents=True, exist_ok=True)
     r = subprocess.run(["g++", *flags, "-o", str(out), str(src)], capture_output=True, text=True)

@@ -5,7 +5,8 @@ build/fs_runtime.o (no coverage) is linked into every problem binary. Per proble
   input on stdin);  path-tracking (-O2 trace-pc,
   -no-pie): fast_sol, fast_bug.  Also smoke, pool_bench(_tsan), fuzzer(_tsan), tests/* (tape_test_<group>:
   core/tests/tape_test.cpp around one real generator, no runtime).
-Rebuilds when a target is older than its listed deps; --force rebuilds everything.
+Rebuilds when a target is older than its listed deps (problem binaries: source, fs_runtime.o and every header
+it may include, see problems.header_deps); --force rebuilds everything.
 """
 import argparse, subprocess
 from concurrent.futures import ThreadPoolExecutor
@@ -39,13 +40,14 @@ def problem_targets(p):
     d, out = p["dir"], BUILD / p["name"]
     fl = problems.flags(d)
     srcs = {"gen": d / "gen/generator.cpp", "ref": d / "brute.cpp", "checker": d / "checker.cpp"}
-    jobs = [(out / "verifier", ["g++", *fl, "-o", str(out / "verifier"), str(d / "verifier.cpp")], [d / "verifier.cpp"])]
+    hdr = lambda src: [src, *problems.header_deps(src, fl)]
+    jobs = [(out / "verifier", ["g++", *fl, "-o", str(out / "verifier"), str(d / "verifier.cpp")], hdr(d / "verifier.cpp"))]
     if "generator_alt_1" in p["variants"]:
         srcs["gen_alt"] = d / "gen/generator_alt_1.cpp"
-    jobs += [(out / name, ["g++", *fl, "-o", str(out / name), str(src), str(RUNTIME)], [src, RUNTIME])
+    jobs += [(out / name, ["g++", *fl, "-o", str(out / name), str(src), str(RUNTIME)], [*hdr(src), RUNTIME])
              for name, src in srcs.items()]
     for name, src in (("fast_sol", d / "sol.cpp"), ("fast_bug", d / "sol_bug.cpp")):
-        jobs.append((out / name, ["g++", *fl, *COV, "-o", str(out / name), str(src), str(RUNTIME)], [src, RUNTIME]))
+        jobs.append((out / name, ["g++", *fl, *COV, "-o", str(out / name), str(src), str(RUNTIME)], [*hdr(src), RUNTIME]))
     return jobs
 
 
@@ -67,14 +69,14 @@ def tool_targets():
         d = problems.get(name)["dir"]
         jobs.append(exe(BUILD / "tests" / f"tape_test_{group}", t / "tape_test.cpp",
                         [*problems.flags(d), f'-DCF_GEN_SRC="{d / "gen/generator.cpp"}"'],
-                        [d / "gen/generator.cpp", problems.DATASET / "common/random.h"]))
+                        problems.header_deps(d / "gen/generator.cpp", problems.flags(d)) + [d / "gen/generator.cpp"]))
     return jobs
 
 
 def main():
     global FORCE
     ap = argparse.ArgumentParser()
-    ap.add_argument("--force", action="store_true", help="rebuild everything (needed after header changes)")
+    ap.add_argument("--force", action="store_true", help="rebuild everything")
     FORCE = ap.parse_args().force
     rt = CORE / "fs_runtime.cpp"
     results = [build(RUNTIME, [*CXX, "-O2", "-c", "-o", str(RUNTIME), str(rt)], [rt])]

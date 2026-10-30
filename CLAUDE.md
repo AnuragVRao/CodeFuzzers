@@ -21,7 +21,7 @@ v2 work follows docs/v2_roadmap.md. Read it before any v2 task.
     pool_bench.cpp  pool-only micro-benchmark and --check; smoke.cpp single-threaded e2e test
     compare.hpp     token comparison; tests/ fork-server edge-case binaries + server_test
 - tools/            Python 3.12 (stdlib + requirements.txt):
-    build.py        builds everything into build/ (--force after header changes)
+    build.py        builds everything into build/ (--force rebuilds all)
     run.py          experiment orchestrator (randomised blocks, resumable, git-stamped)
     flatten.py -> aggregate.py -> plots.py   raw JSON -> runs.csv -> summary.json -> charts
     results_table.py  README key-results table from summary.json
@@ -116,8 +116,9 @@ WSL2 Ubuntu 24.04 (mirrored networking for Ollama on Windows), i7-13650HX (6P+8E
 - Small steps. Do only what the current prompt asks; do not start the next step.
 - End every step by running the test command given and showing its real output.
 - tools/selftest.sh must pass before committing.
-- tools/build.py only tracks each target's own source (plus fs_runtime.o and core headers for
-  tools). After changing any other header (params.h, common/*.h, problem .hpp) run build.py --force.
+- Header changes trigger rebuilds: problem binaries (tools/build.py and build/plain/ via
+  problems.compile) depend on every .h/.hpp in their source dir and -I dirs (problems.header_deps);
+  tools depend on fs_runtime.o and the core headers they list.
 - Do not add dependencies without asking (Python: requirements.txt; JS: dashboard/package.json).
 - The repo path contains a space. Always call subprocess with argument lists, never
   shell strings; quote paths in any shell command.
