@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# End-to-end self-test: build everything, then the fork-server edge cases, the pool correctness
+# End-to-end self-test: build everything, then the golden generator hashes, the fork-server edge cases, the pool correctness
 # check (plain and under ThreadSanitizer, with ASLR off because GCC 13 TSan needs it), the
 # aggregation self-test, a quick correct-solution sanity run on all problems, and the analysis server's
 # fast end-to-end subset (tools/e2e_test.sh --fast).
@@ -22,6 +22,7 @@ tsan_pool_check() {  # passes only if the check passes AND TSan reported nothing
 }
 
 check "build (tools/build.py)"                       python3 tools/build.py
+check "generators match golden (golden_gen --check)" python3 tools/golden_gen.py --check
 check "fork-server edge cases (server_test)"         build/tests/server_test
 check "pool correctness (pool_bench --check)"        build/pool_bench --check
 check "pool under ThreadSanitizer (setarch -R)"      tsan_pool_check
