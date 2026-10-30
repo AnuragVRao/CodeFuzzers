@@ -22,3 +22,4 @@ Left unchanged so v1 results stay comparable. None affects a focus problem's bug
    The correct saved input is the run's sibling directory (`<run>.json` -> `<run>/input.txt`).
    Found while replaying v1 first bugs (Step 0.2); with the sibling path all 3,888 saved inputs match
    their regenerated recipes byte for byte.
+   Evidence: `python3 tools/replay_first_bugs.py` writes per experiment/problem counts to results/derived/v1_first_bug_replay.json.
