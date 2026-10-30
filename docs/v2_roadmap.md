@@ -30,10 +30,10 @@ This file is the single source of truth for the v2 work. Claude Code: read this 
 | 2b | Shared memory to generator fork-server | done | 95b5753 |
 | 2c | Tape arena + pool entry handles | done | 1bc0350 |
 | 2d | Tape mutation, dedup, metrics, arms | done | 0dbb9f8 |
-| 2e | Mutation diagnostics + pre-declared pilot (PROCEED/STOP) | todo | |
+| 2e | Mutation diagnostics + pre-declared pilot (PROCEED/STOP) | done, verdict STOP ((a) PASS, (b) FAIL; docs/v2_results.md) | 78c6ddb |
 | S | Shrinker: tape shrinking + verifier-checked text ddmin | todo | |
-| 3 | trace-cmp value profile (only if 2e = PROCEED) | todo | |
-| 4 | v2 confirmatory pre-registration + runs (only if 2e = PROCEED) | todo | |
+| 3 | trace-cmp value profile (only if 2e = PROCEED) | cancelled by the committed criterion (2e = STOP) | |
+| 4 | v2 confirmatory pre-registration + runs (only if 2e = PROCEED) | cancelled by the committed criterion (2e = STOP) | |
 
 There is no Step 1; the original groundwork prompt became Step 0.
 
