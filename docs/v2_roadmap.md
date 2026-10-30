@@ -195,13 +195,14 @@ Part 1. Write docs/v2_pilot_plan.md with the content below, SHOW IT TO THE USER,
 - Purpose: decide whether to proceed to v2 confirmatory. The pilot is exploratory only.
 - Problems: the 3 frozen focus problems.
 - Arms: random-capture (the v2 random arm: random strategy + --tape-capture, v2 build), tape-noshare, tape-rwlock. 8 workers. n = 50 per arm per problem. Seeds 5000 + r.
-- Kill criterion: PROCEED only if (a) for draw-level tape mutation, measured in Part 2 (2,000 children per problem): mut_changed_input >= 0.80 AND median mut_similarity >= 0.50, on all 3 focus problems, AND (b) at least one problem has median tests-to-bug for tape-noshare or tape-rwlock <= 0.70x random-capture. Otherwise STOP tape work.
+- Kill criterion: PROCEED only if (a) for draw-level tape mutation, measured in Part 2 (2,000 children per problem): mut_changed_input >= 0.80 AND median mut_similarity >= 0.50, on all 3 focus problems, AND (b) at least one problem has median generated tests-to-bug (tests_before + 1) for tape-noshare or tape-rwlock <= 0.70x random-capture. Otherwise STOP tape work.
+- Metric note: tests-to-bug means generated tests-to-bug (tests_before + 1, v1's definition) throughout Steps 2e and 4. Reason: random-capture does not dedup, so executed tests-to-bug excludes the tape arms' dup-skips but counts random's duplicates. Decided before any pilot data (Q3 of the Step 2d review).
 - Note: v1's mut_changed_input is ~1 by construction (every child draws a fresh seed); mut_similarity is the comparable steering measure.
 - The span ablation is not part of the decision.
 
 Part 2 (runs before Part 3). Mutation effectiveness table: the 3 focus problems plus the first non-focus problem alphabetically in each group (arrays, strings, graphs). 2,000 mutated children per mode: v1 guided, tape --tape-mut byte, tape draw-level. Save the (parent, child) recipe pairs; compute mut_similarity offline in Python (outside the timed loop). Report per problem per mode: mut_changed_input, and mut_similarity median and IQR.
 
-Part 3. Run exactly the pilot plan. Report per problem per arm: median/p25/p75 tests-to-bug (executed tests), median wall_s, generated vs executed, dup_skip, budget/overflow counts. State PROCEED or STOP using only the committed criterion. Run nothing else.
+Part 3. Run exactly the pilot plan. Report per problem per arm: median/p25/p75 generated tests-to-bug (primary); executed tests-to-bug median/p25/p75 (secondary); median wall_s, generated vs executed, dup_skip, budget/overflow counts. State PROCEED or STOP using only the committed criterion. Run nothing else.
 
 OUTPUT: plan commit hash + timestamp, Part 2 table, Part 3 table, decision.
 
@@ -259,8 +260,9 @@ Part 1. Write docs/v2_prereg.md, show it to the user, commit after confirmation,
 - Confirmatory family: random-capture vs tape-noshare, random-capture vs tape-rwlock, tape-noshare vs tape-rwlock (random-capture = the v2 random arm: random strategy + --tape-capture).
 - Exploratory family (reported separately): tape-rwlock-span, tape-rwlock-vp (if Step 3 done).
 - n = 1000 per arm per problem, 8 workers, seeds 20000 + r. Time budget 20 s; censored runs = +inf.
-- Primary metric: executed tests-to-bug. Secondary: generated tests, wall time.
+- Primary metric: generated tests-to-bug (tests_before + 1, v1's definition). Secondary: executed tests-to-bug, wall time.
 - Statistics: two-sided Mann-Whitney U, Holm within each family, ratio of medians with 95% bootstrap CI (2000 resamples), Vargha-Delaney A12.
+- Scope: these statistics run on generated tests-to-bug (tools/aggregate.py must compute them on that column for the v2 arms); executed tests-to-bug is descriptive only.
 - Include the power simulation at n = 1000 (existing aggregate.py method) in the doc before committing.
 - All results are reported, including v1 and the pilot, whatever the outcome.
 
