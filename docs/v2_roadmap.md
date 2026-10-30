@@ -29,7 +29,7 @@ This file is the single source of truth for the v2 work. Claude Code: read this 
 | 2a | Tape session support in random.h | done | f68a33f |
 | 2b | Shared memory to generator fork-server | done | 95b5753 |
 | 2c | Tape arena + pool entry handles | done | 1bc0350 |
-| 2d | Tape mutation, dedup, metrics, arms | todo | |
+| 2d | Tape mutation, dedup, metrics, arms | done | 0dbb9f8 |
 | 2e | Mutation diagnostics + pre-declared pilot (PROCEED/STOP) | todo | |
 | S | Shrinker: tape shrinking + verifier-checked text ddmin | todo | |
 | 3 | trace-cmp value profile (only if 2e = PROCEED) | todo | |
