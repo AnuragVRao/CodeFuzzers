@@ -3,10 +3,14 @@ Parallel differential fuzzer for competitive-programming solutions. Course proje
 code must be small, readable, and to the point. Prefer fewer files. No frameworks
 beyond those listed here.
 
+v2 work follows docs/v2_roadmap.md. Read it before any v2 task.
+
 ## Layout
 - Dataset/problems/<group>/<name>/  dataset; groups: arrays, graphs, strings.
   Shared headers in Dataset/common/. Problem list comes from Dataset/manifest.json.
   (never modify unless explicitly asked; generators got a size knob, sol_bug.cpp was added)
+  Exception (team-approved): Dataset/common/random.h may be modified for random-tape support,
+  provided tools/golden_gen.py --check passes when no tape is supplied.
 - fuzz_config.json  per-problem settings: {"<problem>": {"max_size": N}}
 - requirements.txt  numpy, scipy, matplotlib (pinned); nothing else for Python
 - core/             C++17, header-light:
@@ -85,8 +89,10 @@ beyond those listed here.
 - "hunt" is exploratory (30 repeats, all hard-tier problems); "hunt-focus" (100 repeats, 8 workers,
   the 3 hard-tier problems with the most tests-to-bug; constant FOCUS_PROBLEMS in tools/run.py,
   recorded in results/raw/hunt-focus/focus.json) is the confirmatory test with its own Holm family.
-  Confirmatory problems (chosen by rule before data collection, commit date is the
-  record): majority_voting, range_linear_add_range_min, longest_common_substring.
+  Confirmatory problems: chosen by a difficulty rule (largest median tests-to-bug over all
+  three strategies) AFTER the exploratory hunt finished (hunt_full.log 2026-10-21 18:22 UTC;
+  rule committed f2392e3 18:44 UTC), and BEFORE confirmatory (hunt-focus) data collection:
+  majority_voting, range_linear_add_range_min, longest_common_substring.
 - Statistics (tools/aggregate.py docstring has every formula): medians + IQR; censored hunts
   count as +inf; Mann-Whitney U with Holm correction per family; bootstrap CI of median ratios;
   simulated minimum detectable effect; LLM hits vs exact Poisson-binomial / binomial baselines.
