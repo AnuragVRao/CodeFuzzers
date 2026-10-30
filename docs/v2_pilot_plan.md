@@ -106,3 +106,8 @@ from all of these too.
   at the originally planned n = 50 it is about 45% (0.447 exponential, 0.446 geometric), which is why n was raised
   before any pilot data; at n = 200 it is about 3.8% (0.0378 exponential, 0.0372 geometric; per comparison 0.0067).
   A PROCEED licenses only the confirmatory study, which has its own Holm family.
+
+## Amendment 1 (2026-10-30, before any Part 3 run)
+Infrastructure failures in Part 3 (fuzzer crash, abnormal exit, or any run that neither finds the bug nor reaches
+the 20 s limit) are not re-run. If any occur, the verdict for (b) is withheld, and the failures are listed per
+arm x problem for a decision. Added before any Part 3 data.
