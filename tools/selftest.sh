@@ -2,6 +2,7 @@
 # End-to-end self-test: build everything, then the golden generator hashes, the fork-server edge cases
 # and checker outcome mapping (C++, and Python agreeing with it), the random.h tape session (in-process and
 # through the fork-server), tape recipes (strategy guard, admitted entries replay, --op-log changes nothing),
+# Part 2 (similarity unit tests, pipeline structure),
 # the pool correctness
 # check (plain and under ThreadSanitizer, with ASLR off because GCC 13 TSan needs it), the tape arena stress
 # test (plain and TSan), the
@@ -66,6 +67,14 @@ sys.exit(res(a) != res(b) or cfg(a) != cfg(b))' "$d.off.json" "$d.on1.json" || {
     return $rc
 }
 
+part2_check() {  # Part 2 pipeline structure on a non-Part-2 problem, development seed 7, pass/fail only
+    local d=/dev/shm/cf_selftest_part2_$$ rc
+    python3 tools/part2.py --problems range_add_range_min --seed-base 7 --warmup 300 --children 50 --out "$d" --check-only
+    rc=$?
+    rm -rf "$d"
+    return $rc
+}
+
 tape_tests() {  # core/tests/tape_test.cpp around one generator per group
     for g in arrays strings graphs; do build/tests/tape_test_$g || return 1; done
 }
@@ -82,6 +91,8 @@ check "tape memfd via fork-server (tape_server_test)" build/tests/tape_server_te
 check "--recipes tape rejects untested strategies"    tape_strategy_check
 check "tape recipes: admitted entries replay (T2)"    tape_smoke
 check "--op-log changes no result (log on vs off)"    oplog_check
+check "Part 2 similarity unit tests"                  python3 tools/part2.py --selftest
+check "Part 2 pipeline (range_add_range_min, seed 7)" part2_check
 check "checker outcome mapping (checker_test)"        build/tests/checker_test
 check "C++ and Python checker mapping agree"          python3 tools/checker_agree_test.py
 check "pool correctness (pool_bench --check)"         build/pool_bench --check

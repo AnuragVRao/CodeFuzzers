@@ -92,7 +92,14 @@ header {magic, cap, log_cap, in_off, out_off, log_off, out_len, log_len, consume
 
 ### Metrics added
 generated, executed, dup_skip, mut_changed_input (fraction of mutated children whose input hash differs from the parent's), arena_bytes, arena_full, gen_budget_exceeded, tape_overflow.
-mut_similarity (offline, Step 2e Part 2 only, never in the timed loop): for a mutated child, difflib.SequenceMatcher ratio between parent and child generator outputs as whitespace token lists, first 20,000 tokens each, computed in Python from saved (parent, child) recipe pairs.
+mut_similarity (offline, Step 2e Part 2 only, never in the timed loop; tools/part2.py): for a mutated child,
+difflib.SequenceMatcher(None, parent_tokens, child_tokens, autojunk=False).ratio() of the parent's and the child's
+generator outputs, computed in Python from the saved (parent, child) pairs. Tokenisation, identical for every
+problem: a token is a maximal run of digits with an optional leading '-', otherwise any single non-whitespace
+character; whitespace only separates tokens (regex -?\d+|\S); first 20,000 tokens of each output. Why: with
+whitespace tokens a string input is one token (one changed character in a 2-string input gives exactly 0.5), and
+difflib's default autojunk treats frequent tokens as junk (a 400-token 0/1 list with one flipped value: 0.5 instead
+of 0.9975).
 
 ### Arms
 random strategy (--strategy random, unchanged v1), tape-noshare, tape-rwlock; ablations tape-rwlock-span and (Step 3) tape-rwlock-vp.

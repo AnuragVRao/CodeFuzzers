@@ -3,7 +3,7 @@
 build/fs_runtime.o (no coverage) is linked into every problem binary. Per problem in build/<name>/:
   lightweight (-O2): gen, gen_alt (if variant exists), ref, checker, verifier (plain, exit 0 = valid
   input on stdin);  path-tracking (-O2 trace-pc,
-  -no-pie): fast_sol, fast_bug.  Also smoke, pool_bench(_tsan), fuzzer(_tsan), tests/* (tape_test_<group>:
+  -no-pie): fast_sol, fast_bug.  Also smoke, pool_bench(_tsan), fuzzer(_tsan), part2, tests/* (tape_test_<group>:
   core/tests/tape_test.cpp around one real generator, no runtime).
 Rebuilds when a target is older than its listed deps (problem binaries: source, fs_runtime.o and every header
 it may include, see problems.header_deps); --force rebuilds everything.
@@ -55,7 +55,7 @@ def tool_targets():
     def exe(out, src, flags, deps, runtime=False):
         cmd = [*CXX, *flags, "-o", str(out), str(src)] + ([str(RUNTIME)] if runtime else [])
         return out, cmd, [src, *deps] + ([RUNTIME] if runtime else [])
-    srv, pool, cmp_, arena = CORE / "server.hpp", CORE / "pool.hpp", CORE / "compare.hpp", CORE / "arena.hpp"
+    srv, pool, cmp_, arena, mut = CORE / "server.hpp", CORE / "pool.hpp", CORE / "compare.hpp", CORE / "arena.hpp", CORE / "mutate.hpp"
     t = CORE / "tests"
     jobs = [exe(BUILD / "smoke", CORE / "smoke.cpp", ["-O2"], [srv, cmp_]),
             exe(BUILD / "pool_bench", CORE / "pool_bench.cpp", ["-O2", "-pthread"], [pool]),
@@ -66,8 +66,9 @@ def tool_targets():
             exe(BUILD / "tests/tape_replay_check", t / "tape_replay_check.cpp", ["-O2"], [srv, cmp_]),
             exe(BUILD / "tests/gen_tape_toy", t / "gen_tape_toy.cpp", ["-O2", "-I", str(problems.DATASET / "common")],
                 [problems.DATASET / "common/random.h"], runtime=True),
-            exe(BUILD / "fuzzer", CORE / "fuzzer.cpp", ["-O2", "-pthread"], [srv, pool, cmp_, arena]),
-            exe(BUILD / "fuzzer_tsan", CORE / "fuzzer.cpp", ["-fsanitize=thread", "-g", "-O1", "-pthread"], [srv, pool, cmp_, arena]),
+            exe(BUILD / "fuzzer", CORE / "fuzzer.cpp", ["-O2", "-pthread"], [srv, pool, cmp_, arena, mut]),
+            exe(BUILD / "fuzzer_tsan", CORE / "fuzzer.cpp", ["-fsanitize=thread", "-g", "-O1", "-pthread"], [srv, pool, cmp_, arena, mut]),
+            exe(BUILD / "part2", CORE / "part2.cpp", ["-O2"], [srv, cmp_, mut]),
             exe(BUILD / "tests/arena_test", t / "arena_test.cpp", ["-O2", "-pthread"], [arena, pool, srv]),
             exe(BUILD / "tests/arena_test_tsan", t / "arena_test.cpp", ["-fsanitize=thread", "-g", "-O1", "-pthread"], [arena, pool, srv])]
     jobs += [exe(BUILD / "tests" / n, t / f"{n}.cpp", ["-O2"], [], runtime=True) for n in ("crash", "hang", "exit3", "exit_code", "gen_named", "gen_seedonly")]

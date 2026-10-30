@@ -34,6 +34,7 @@
 #include <unordered_set>
 #include "arena.hpp"
 #include "compare.hpp"
+#include "mutate.hpp"
 #include "pool.hpp"
 #include "server.hpp"
 
@@ -54,9 +55,6 @@ struct Config {
     double time_limit = 60, write_frac = 0;
 };
 constexpr uint64_t TAPE_BUDGET = 1000000;  // words per generator run (docs/tape_design.md)
-
-enum Op { VALUE, NUDGE, COPY, SIZE, SPAN, BYTE, OPS };
-static const char* const OP_NAMES[OPS] = {"value", "nudge", "copy", "size", "span", "byte"};
 
 struct alignas(64) Stats {
     long long tests = 0, ok = 0, WA = 0, RE = 0, TLE = 0, invalid = 0, gen_skip = 0, news = 0, size_sum = 0;
@@ -177,111 +175,6 @@ static bool gen_argv(const std::string& tmpl, std::vector<std::string>& argv) {
     return true;
 }
 
-static const double factors[] = {0.5, 0.8, 1, 1, 1.25, 2};  // v1 size-factor op
-
-// One applied operator for --op-log: draw ops (value, nudge, copy, span) a = draw index, b = old value, c = new
-// value (span: one record per draw); byte: a = word index, b = old word, c = new word; size: a = old size,
-// b = new size, factor = the size factor.
-struct OpRec {
-    Op op;
-    uint64_t a, b, c;
-    double factor;
-};
-
-static std::string op_text(const std::vector<OpRec>& recs) {
-    std::string s;
-    char buf[96];
-    for (const OpRec& o : recs) {
-        if (o.op == SIZE) snprintf(buf, sizeof buf, " size:%llu:%llu:%g", (unsigned long long)o.a, (unsigned long long)o.b, o.factor);
-        else snprintf(buf, sizeof buf, " %s:%llu:%llu:%llu", OP_NAMES[o.op], (unsigned long long)o.a, (unsigned long long)o.b, (unsigned long long)o.c);
-        s += buf;
-    }
-    return s;
-}
-
-static uint64_t mask_of(uint64_t upper) {  // as in random.h next(upper)
-    if (!(upper & (upper + 1))) return upper;
-    int lg = 63 - __builtin_clzll(upper);
-    return lg == 63 ? ~0ULL : (1ULL << (lg + 1)) - 1;
-}
-static uint64_t upto(std::mt19937_64& rng, uint64_t upper) {  // uniform in [0, upper]
-    return upper == ~0ULL ? rng() : std::uniform_int_distribution<uint64_t>(0, upper)(rng);
-}
-
-// Child tape t (a copy of the parent's output tape) with the parent's draw log (n draws); may change
-// size. Applies m = min(8, 1 + Geometric(0.5)) operators (docs/tape_design.md, Mutation); returns the
-// set of operators actually applied (bit per Op) and counts each application in st.op_applied.
-// A draw write replaces the WHOLE accepted word with v; a draw's value is word & mask(upper).
-// rec (--op-log only, else null) receives every write; recording never calls rng.
-static unsigned mutate(std::vector<uint64_t>& t, const TapeDraw* log, size_t n, uint16_t& size, std::mt19937_64& rng,
-                       Stats& st, std::vector<OpRec>* rec) {
-    unsigned applied = 0;
-    auto apply = [&](Op op) { st.op_applied[op]++, applied |= 1u << op; };
-    if (cfg.tape_mut == "byte") {  // diagnostic: one random byte of one random word
-        if (!t.empty()) {
-            size_t i = rng() % t.size();
-            uint64_t& x = t[i];
-            uint64_t old = x;
-            int b = int(rng() % 8);
-            x = (x & ~(0xFFULL << (8 * b))) | ((rng() & 0xFF) << (8 * b));
-            if (rec) rec->push_back({BYTE, i, old, x, 0});
-        }
-        apply(BYTE);
-        return applied;
-    }
-    auto val = [&](size_t d) { return t[log[d].index] & mask_of(log[d].upper); };
-    auto value_op = [&] {  // new value in [0, upper], different from the old one if upper > 0
-        size_t d = rng() % n;
-        uint64_t up = log[d].upper, old = val(d), v = 0;
-        if (up > 0) v = upto(rng, up - 1), v += v >= old;
-        t[log[d].index] = v;
-        if (rec) rec->push_back({VALUE, d, old, v, 0});
-        apply(VALUE);
-    };
-    int m = std::min(8, 1 + std::geometric_distribution<int>(0.5)(rng));
-    for (int k = 0; k < m; k++) {
-        int u = int(rng() % 100);
-        if (n == 0 || u >= 90) {  // size (also the only possible op when the parent made no draws)
-            double factor = factors[rng() % 6], s = std::llround(size * factor);
-            uint16_t old = size;
-            size = uint16_t(std::min<double>(std::max<double>(s, 1), cfg.max_size));
-            if (rec) rec->push_back({SIZE, old, size, 0, factor});
-            apply(SIZE);
-        } else if (cfg.tape_span && u >= 40 && u < 50) {  // span: L = 1 + Geometric(mean 8) draws -> 0 or upper
-            size_t d = rng() % n, len = 1 + std::geometric_distribution<int>(1.0 / 9)(rng);
-            bool top = rng() & 1;
-            for (size_t j = d; j < n && j < d + len; j++) {
-                uint64_t old = val(j);
-                t[log[j].index] = top ? log[j].upper : 0;
-                if (rec) rec->push_back({SPAN, j, old, t[log[j].index], 0});
-            }
-            apply(SPAN);
-        } else if (u < 50) {
-            value_op();
-        } else if (u < 75) {  // nudge by +-k, k in 1..16, clamped to [0, upper]
-            size_t d = rng() % n;
-            uint64_t up = log[d].upper, old = val(d), k1 = 1 + rng() % 16;
-            t[log[d].index] = (rng() & 1) ? (old > up - std::min(up, k1) ? up : old + k1) : (old < k1 ? 0 : old - k1);
-            if (rec) rec->push_back({NUDGE, d, old, t[log[d].index], 0});
-            apply(NUDGE);
-        } else {  // copy val(d1) into d2 if it fits; up to 4 retries of d2, then a value op
-            size_t d1 = rng() % n;
-            uint64_t v = val(d1);
-            bool done = false;
-            for (int tries = 0; tries < 5 && !done; tries++) {
-                size_t d2 = rng() % n;
-                if (v <= log[d2].upper) {
-                    if (rec) rec->push_back({COPY, d2, val(d2), v, 0});
-                    t[log[d2].index] = v, done = true;
-                }
-            }
-            if (done) apply(COPY);
-            else value_op();
-        }
-    }
-    return applied;
-}
-
 template <class E> static BasicPool<E>* pool_of(int w) {
     auto& v = [&]() -> auto& { if constexpr (std::is_same_v<E, TapeEntry>) return tape_pools; else return pools; }();
     return cfg.strategy == "random" ? nullptr : v[cfg.strategy == "noshare" ? w : 0].get();
@@ -326,6 +219,8 @@ template <class E> static void worker(int w, std::vector<int> cpus) {
     RecentHashes recent;
     std::vector<OpRec> recs;  // --op-log: this child's applied operators
     const bool oplog = !cfg.op_log.empty();
+    MutCfg mc;  // the mutator's settings (core/mutate.hpp)
+    mc.byte = cfg.tape_mut == "byte", mc.span = cfg.tape_span, mc.max_size = cfg.max_size;
     auto dead = [&](const Server::Result& r) {
         if (r.kind != Server::Result::SERVER_DEAD) return false;
         fprintf(stderr, "worker %d: server died\n", w), failed = stop_flag = true;
@@ -352,7 +247,7 @@ template <class E> static void worker(int w, std::vector<int> cpus) {
             if (use) {  // child: the parent's variant and tape, mutated
                 r = picked;
                 tape.assign(arena->words(picked.tape), arena->words(picked.tape) + picked.tape.words);
-                ops = mutate(tape, arena->draws(picked.tape), picked.tape.draws, r.size, rng, st, oplog ? &recs : nullptr);
+                ops = mutate(tape, arena->draws(picked.tape), picked.tape.draws, r.size, rng, mc, st.op_applied, oplog ? &recs : nullptr);
             } else {
                 random_recipe(r);
             }

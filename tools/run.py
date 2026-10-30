@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """Experiment orchestrator: runs build/fuzzer strictly one run at a time, in a randomised block design.
-Usage: python3 tools/run.py --exp scale|hunt|pinning|hunt-focus --preset quick|full [--dry-run]
+Usage: python3 tools/run.py --exp scale|hunt|pinning|hunt-focus|pilot --preset quick|full [--dry-run]
 Repeat r is one block: every configuration of the experiment, shuffled with random.Random(1000 + r);
 blocks run in order (r = 0, 1, ...). One discarded warm-up run (to /tmp) precedes the first measured run.
 Each run writes results/raw/<exp>/<problem>/<strategy>_w<W>_k<K>_f<F>_r<R>[_pinX].json and is skipped if
 that file exists (resumable); quick presets use <exp>-quick. Run r uses --seed 1000+r; worker i is pinned
 to the i-th CPU of CPU_ORDER. Scale = weak scaling (tests = 2500 x workers, --recipes random); hunt,
 hunt-focus and pinning use guided recipes.
+pilot (v2 Step 2e, docs/v2_pilot_plan.md; full preset only): arms random-capture, tape-noshare, tape-rwlock on the
+3 focus problems, 8 workers, hunt, 20 s, n = 200; run r uses --seed 5000+r and block seed 5000+r (shuffle of
+block r), recorded as "block_seed" in each run's JSON; the discarded warm-up uses development seed 999.
 """
 import argparse, json, os, random, subprocess, time
 from pathlib import Path
@@ -38,6 +41,9 @@ TESTS_PER_WORKER = 2500  # weak scaling: total tests = 2500 x workers
 # was: the 3 hard-tier problems with the largest median tests-to-bug at 8 workers in the first full hunt.
 FOCUS_PROBLEMS = ["majority_voting", "range_linear_add_range_min", "longest_common_substring"]
 FOCUS_FILE = RAW / "hunt-focus" / "focus.json"  # written as a record of what a hunt-focus run used
+PILOT_ARMS = ["random-capture", "tape-noshare", "tape-rwlock"]
+PILOT_SEED_BASE = 5000  # pilot run r: --seed 5000 + r, block seed 5000 + r (seeds 5000-5199)
+WARMUP_SEED = 999       # development seed for the pilot's discarded warm-up run
 
 
 def record_focus():
@@ -77,10 +83,18 @@ def plan(exp, preset):
     elif exp == "pinning":
         reps = 5
         confs = [conf("range_add_range_min", "global", 8, mode="scale", tests=20000, pin=pin) for pin in (1, 0)]
+    elif exp == "pilot":
+        if not full:
+            raise SystemExit("pilot has only a full preset")
+        reps = 200
+        confs = [dict(conf(p, s, 8, limit=20), seed_base=PILOT_SEED_BASE) for p in FOCUS_PROBLEMS for s in PILOT_ARMS]
     runs = []
     for r in range(reps):
+        block_seed = confs[0].get("seed_base", 1000) + r  # 1000 + r for every experiment except the pilot
         block = [dict(c, repeat=r) for c in confs]
-        random.Random(1000 + r).shuffle(block)
+        if "seed_base" in confs[0]:
+            block = [dict(b, block_seed=block_seed) for b in block]
+        random.Random(block_seed).shuffle(block)
         runs += block
     return runs
 
@@ -118,9 +132,18 @@ def command(exp, run, cfg, tmp_out):
             "--max-size", str(p["max_size"]), "--variants", str(p["variants"]),
             "--fast", "sol" if run["mode"] == "scale" else "bug", "--mode", run["mode"],
             "--strategy", strategy, "--recipes", recipes or run["recipes"], "--workers", str(w), "--tests", str(run["tests"] or 1),
-            "--time-limit", str(run["time_limit"] or 60), "--seed", str(1000 + run["repeat"]),
+            "--time-limit", str(run["time_limit"] or 60), "--seed", str(run.get("seed_base", 1000) + run["repeat"]),
             "--extra-ops", str(run["k"]), "--write-frac", str(run["f"]), "--cpus", cpus,
             "--out", str(tmp_out), "--bug-dir", str(bug_dir), *extra]
+
+
+def warmup_command(exp, run, cfg):
+    """The discarded warm-up run: run's command to /tmp; the pilot uses WARMUP_SEED instead of a pilot seed."""
+    cmd = command(exp, run, cfg, Path("/tmp/cf_warmup.json"))
+    cmd[cmd.index("--bug-dir") + 1] = "/tmp/cf_warmup_bug"
+    if "seed_base" in run:
+        cmd[cmd.index("--seed") + 1] = str(WARMUP_SEED)
+    return cmd
 
 
 def problem_config():
@@ -139,7 +162,7 @@ def git_info():
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--exp", required=True, choices=["scale", "hunt", "pinning", "hunt-focus"])
+    ap.add_argument("--exp", required=True, choices=["scale", "hunt", "pinning", "hunt-focus", "pilot"])
     ap.add_argument("--preset", default="quick", choices=["quick", "full"])
     ap.add_argument("--dry-run", action="store_true", help="print the plan and ETA only")
     a = ap.parse_args()
@@ -170,11 +193,8 @@ def main():
         return 0
 
     if todo:  # warm-up: one discarded run so the first measured run does not pay cold caches
-        warm = Path("/tmp/cf_warmup.json")
-        cmd = command(exp_dir, todo[0], cfg, warm)
-        cmd[cmd.index("--bug-dir") + 1] = "/tmp/cf_warmup_bug"
-        subprocess.run(cmd, capture_output=True)
-        warm.unlink(missing_ok=True)
+        subprocess.run(warmup_command(exp_dir, todo[0], cfg), capture_output=True)
+        Path("/tmp/cf_warmup.json").unlink(missing_ok=True)
         print("warm-up run done (discarded)")
 
     predicted_done = actual_done = 0.0
@@ -193,6 +213,8 @@ def main():
         d["git_commit"], d["git_dirty"] = commit, dirty  # which code produced this result
         if "tests_per_worker" in run:
             d["tests_per_worker"] = run["tests_per_worker"]
+        if "block_seed" in run:  # pilot: the shuffle seed of this run's block
+            d["block_seed"] = run["block_seed"]
         tmp.write_text(json.dumps(d, indent=2) + "\n")
         os.replace(tmp, out)  # only complete results count as done
         predicted_done += predict(run, bugs)
