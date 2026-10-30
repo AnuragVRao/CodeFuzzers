@@ -3,9 +3,9 @@ Per problem per mode: single-operator change rates per operator, same-value writ
 draw mode the size no-op split of single-op size children whose output did not change."""
 import json, sys
 from collections import Counter, defaultdict
-from pathlib import Path
+import problems
 
-R = Path("/home/anura/PC Project/CodeFuzzers/results/part2")
+R = problems.ROOT / "results" / "part2"
 
 
 def mask_of(upper):

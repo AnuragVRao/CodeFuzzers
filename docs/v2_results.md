@@ -150,3 +150,63 @@ dup_skip, gen_budget_exceeded and tape_overflow are sums over the 200 runs. Runs
 results/raw/pilot/ (gitignored): 6,600 files (1,800 run JSONs and 1,800 bug directories with input.txt, recipe.txt,
 and tape.bin for tape arms). Every file's SHA-256 is listed in docs/v2_pilot_raw.sha256 (`sha256sum -c` format,
 6,600 lines; sha256 of that manifest: 0f65644878e7085c5c90e215391386bf0fed62ce1106ab70c1be66f6aaa5e0ea).
+
+## Exploratory (post-hoc) analysis (2026-10-30)
+
+Produced by `python3 tools/pilot_posthoc.py` (committed together with this section), from the existing pilot data
+only; no new runs. Post-hoc and descriptive: not part of any verdict. Bootstrap seed 20261030. Section (d) is
+model-based; its assumptions are stated in its header.
+
+Post-hoc, descriptive; not part of any verdict. Source: results/raw/pilot (Step 2e Part 3).
+
+(a) Bug-finding test: ROOT (empty input tape) vs CHILD. Operators of CHILD bugs: not recoverable (no --op-log in
+the pilot; parents of bugs are not recorded).
+
+| problem | arm | runs with a bug | ROOT-found | CHILD-found |
+|---|---|---:|---:|---:|
+| majority_voting | tape-noshare | 200 | 58 | 142 |
+| majority_voting | tape-rwlock | 200 | 86 | 114 |
+| range_linear_add_range_min | tape-noshare | 200 | 108 | 92 |
+| range_linear_add_range_min | tape-rwlock | 200 | 129 | 71 |
+| longest_common_substring | tape-noshare | 200 | 25 | 175 |
+| longest_common_substring | tape-rwlock | 200 | 13 | 187 |
+
+(b) Fraction of generated tests that were roots, per run ((generated - mutated) / generated, whole run).
+
+| problem | arm | median fraction of roots | q1 | q3 |
+|---|---|---:|---:|---:|
+| majority_voting | tape-noshare | 0.106 | 0.102 | 0.119 |
+| majority_voting | tape-rwlock | 0.106 | 0.100 | 0.118 |
+| range_linear_add_range_min | tape-noshare | 0.109 | 0.102 | 0.120 |
+| range_linear_add_range_min | tape-rwlock | 0.108 | 0.100 | 0.121 |
+| longest_common_substring | tape-noshare | 0.125 | 0.106 | 0.162 |
+| longest_common_substring | tape-rwlock | 0.130 | 0.111 | 0.170 |
+
+(c) Median generated tests-to-bug ratio tape / random-capture with a 95% percentile bootstrap CI (2,000 resamples, seed 20261030); post-hoc, descriptive.
+
+| problem | arm | ratio | 95% CI |
+|---|---|---:|---|
+| majority_voting | tape-noshare | 3.876 | [2.974, 5.044] |
+| majority_voting | tape-rwlock | 3.554 | [2.518, 5.079] |
+| range_linear_add_range_min | tape-noshare | 5.314 | [4.064, 6.786] |
+| range_linear_add_range_min | tape-rwlock | 6.156 | [4.730, 7.893] |
+| longest_common_substring | tape-noshare | 1.235 | [0.934, 1.624] |
+| longest_common_substring | tape-rwlock | 0.793 | [0.615, 0.981] |
+
+(d) Rate decomposition: post-hoc, model-based, descriptive. Assumptions: constant per-test bug rates;
+approximately exponential tests-to-bug (so rate = ln2 / median); roots find the bug like random-capture tests
+(rate lambda_fresh); root fractions r are whole-run medians from (b) (up to 7 in-flight tests included).
+
+| problem | arm | lambda_fresh | lambda_tape | r | predicted root-found share | observed root-found share | relative child productivity |
+|---|---|---:|---:|---:|---:|---:|---:|
+| majority_voting | tape-noshare | 0.00217 | 0.00056 | 0.106 | 0.412 | 0.290 | 0.170 |
+| majority_voting | tape-rwlock | 0.00217 | 0.00061 | 0.106 | 0.376 | 0.430 | 0.196 |
+| range_linear_add_range_min | tape-noshare | 0.00354 | 0.00067 | 0.109 | 0.579 | 0.540 | 0.089 |
+| range_linear_add_range_min | tape-rwlock | 0.00354 | 0.00057 | 0.108 | 0.662 | 0.645 | 0.061 |
+| longest_common_substring | tape-noshare | 0.00239 | 0.00194 | 0.125 | 0.155 | 0.125 | 0.783 |
+| longest_common_substring | tape-rwlock | 0.00239 | 0.00302 | 0.130 | 0.103 | 0.065 | 1.301 |
+
+Part 3 report script: results/raw/pilot/pilot_report.py, sha256
+6c2001e3d61a8d742df341ae92236e2d12aa674a1e5463469fc577662a34374e. It was copied there after
+docs/v2_pilot_raw.sha256 was made, so it is not in that manifest. tools/pilot_report.py is the same script with
+portable paths (problems.ROOT) and gives byte-identical output.

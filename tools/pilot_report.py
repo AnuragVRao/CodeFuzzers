@@ -3,13 +3,12 @@ median generated tests-to-bug (tests_before + 1, censored = +inf) per arm x prob
 more than half censored has an undefined median and cannot satisfy (b); PASS if tape / random-capture <= 0.70.
 Quantiles use tools/aggregate.py quant() (numpy linear interpolation, the project's existing method).
 Infrastructure failures (Amendment 1): missing run JSON (run.py FAILED), or a run without a bug whose wall_s < 20."""
-import json, math, sys
+import json, math
 from collections import Counter
-from pathlib import Path
+import problems
+from aggregate import quant
 
-ROOT = Path("/home/anura/PC Project/CodeFuzzers")
-sys.path.insert(0, str(ROOT / "tools"))
-from aggregate import quant  # noqa: E402
+ROOT = problems.ROOT
 
 RAW = ROOT / "results" / "raw" / "pilot"
 PROBLEMS = ["majority_voting", "range_linear_add_range_min", "longest_common_substring"]
