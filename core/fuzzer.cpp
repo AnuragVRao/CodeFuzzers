@@ -16,6 +16,8 @@
 // last 1024 outputs are skipped (dup_skip: generated, not executed). Admission: status OK, COMPLETE,
 // no OVERFLOW, new coverage. --tape-capture 1 (random strategy only) runs every test through an
 // empty tape session and never admits anything: the v2 random arm.
+// --op-log FILE (diagnostics, Step 2e Part 2): one line per child (a test with a parent) listing every
+// applied operator; logging reads values only and never changes RNG calls, operator choice or admission.
 #include <pthread.h>
 #include <sched.h>
 #include <sys/stat.h>
@@ -44,6 +46,7 @@ struct Config {
     std::string recipes = "guided";  // guided: use picked/mutated recipes; random: pick but ignore; tape: v2
     std::string tape_mut = "draw";   // --recipes tape: draw-level operators, or "byte" (diagnostic only)
     std::string dump_tapes;          // --recipes tape: write every admitted entry (recipe + tape) here
+    std::string op_log;              // write one line per child with its applied operators here
     int max_size = 200, variants = 1, workers = 1, timeout_ms = 2000, extra_ops = 0;
     int tape_span = 0, tape_capture = 0;  // span ablation (tape recipes); empty-tape capture (random strategy)
     long long arena_mb = 1024;  // tape arena size (--recipes tape only; no arena is created otherwise)
@@ -99,6 +102,7 @@ static std::vector<std::unique_ptr<Pool>> pools;  // 1 shared, 1 per worker (nos
 static std::vector<std::unique_ptr<BasicPool<TapeEntry>>> tape_pools;  // the same, for --recipes tape
 static std::unique_ptr<Arena> arena;               // tape words + draw logs (--recipes tape); null otherwise
 static std::vector<std::vector<TapeEntry>> admitted;  // per worker, only with --dump-tapes
+static std::vector<std::string> op_lines;            // per worker, only with --op-log
 static std::vector<std::vector<uint8_t>> seen;      // random only: per-worker OR of class maps
 static std::unique_ptr<Stats[]> stats;
 static std::atomic<long long> started{0}, completed{0};
@@ -175,6 +179,26 @@ static bool gen_argv(const std::string& tmpl, std::vector<std::string>& argv) {
 
 static const double factors[] = {0.5, 0.8, 1, 1, 1.25, 2};  // v1 size-factor op
 
+// One applied operator for --op-log: draw ops (value, nudge, copy, span) a = draw index, b = old value, c = new
+// value (span: one record per draw); byte: a = word index, b = old word, c = new word; size: a = old size,
+// b = new size, factor = the size factor.
+struct OpRec {
+    Op op;
+    uint64_t a, b, c;
+    double factor;
+};
+
+static std::string op_text(const std::vector<OpRec>& recs) {
+    std::string s;
+    char buf[96];
+    for (const OpRec& o : recs) {
+        if (o.op == SIZE) snprintf(buf, sizeof buf, " size:%llu:%llu:%g", (unsigned long long)o.a, (unsigned long long)o.b, o.factor);
+        else snprintf(buf, sizeof buf, " %s:%llu:%llu:%llu", OP_NAMES[o.op], (unsigned long long)o.a, (unsigned long long)o.b, (unsigned long long)o.c);
+        s += buf;
+    }
+    return s;
+}
+
 static uint64_t mask_of(uint64_t upper) {  // as in random.h next(upper)
     if (!(upper & (upper + 1))) return upper;
     int lg = 63 - __builtin_clzll(upper);
@@ -188,15 +212,19 @@ static uint64_t upto(std::mt19937_64& rng, uint64_t upper) {  // uniform in [0, 
 // size. Applies m = min(8, 1 + Geometric(0.5)) operators (docs/tape_design.md, Mutation); returns the
 // set of operators actually applied (bit per Op) and counts each application in st.op_applied.
 // A draw write replaces the WHOLE accepted word with v; a draw's value is word & mask(upper).
+// rec (--op-log only, else null) receives every write; recording never calls rng.
 static unsigned mutate(std::vector<uint64_t>& t, const TapeDraw* log, size_t n, uint16_t& size, std::mt19937_64& rng,
-                       Stats& st) {
+                       Stats& st, std::vector<OpRec>* rec) {
     unsigned applied = 0;
     auto apply = [&](Op op) { st.op_applied[op]++, applied |= 1u << op; };
     if (cfg.tape_mut == "byte") {  // diagnostic: one random byte of one random word
         if (!t.empty()) {
-            uint64_t& x = t[rng() % t.size()];
+            size_t i = rng() % t.size();
+            uint64_t& x = t[i];
+            uint64_t old = x;
             int b = int(rng() % 8);
             x = (x & ~(0xFFULL << (8 * b))) | ((rng() & 0xFF) << (8 * b));
+            if (rec) rec->push_back({BYTE, i, old, x, 0});
         }
         apply(BYTE);
         return applied;
@@ -207,19 +235,26 @@ static unsigned mutate(std::vector<uint64_t>& t, const TapeDraw* log, size_t n, 
         uint64_t up = log[d].upper, old = val(d), v = 0;
         if (up > 0) v = upto(rng, up - 1), v += v >= old;
         t[log[d].index] = v;
+        if (rec) rec->push_back({VALUE, d, old, v, 0});
         apply(VALUE);
     };
     int m = std::min(8, 1 + std::geometric_distribution<int>(0.5)(rng));
     for (int k = 0; k < m; k++) {
         int u = int(rng() % 100);
         if (n == 0 || u >= 90) {  // size (also the only possible op when the parent made no draws)
-            double s = std::llround(size * factors[rng() % 6]);
+            double factor = factors[rng() % 6], s = std::llround(size * factor);
+            uint16_t old = size;
             size = uint16_t(std::min<double>(std::max<double>(s, 1), cfg.max_size));
+            if (rec) rec->push_back({SIZE, old, size, 0, factor});
             apply(SIZE);
         } else if (cfg.tape_span && u >= 40 && u < 50) {  // span: L = 1 + Geometric(mean 8) draws -> 0 or upper
             size_t d = rng() % n, len = 1 + std::geometric_distribution<int>(1.0 / 9)(rng);
             bool top = rng() & 1;
-            for (size_t j = d; j < n && j < d + len; j++) t[log[j].index] = top ? log[j].upper : 0;
+            for (size_t j = d; j < n && j < d + len; j++) {
+                uint64_t old = val(j);
+                t[log[j].index] = top ? log[j].upper : 0;
+                if (rec) rec->push_back({SPAN, j, old, t[log[j].index], 0});
+            }
             apply(SPAN);
         } else if (u < 50) {
             value_op();
@@ -227,6 +262,7 @@ static unsigned mutate(std::vector<uint64_t>& t, const TapeDraw* log, size_t n, 
             size_t d = rng() % n;
             uint64_t up = log[d].upper, old = val(d), k1 = 1 + rng() % 16;
             t[log[d].index] = (rng() & 1) ? (old > up - std::min(up, k1) ? up : old + k1) : (old < k1 ? 0 : old - k1);
+            if (rec) rec->push_back({NUDGE, d, old, t[log[d].index], 0});
             apply(NUDGE);
         } else {  // copy val(d1) into d2 if it fits; up to 4 retries of d2, then a value op
             size_t d1 = rng() % n;
@@ -234,7 +270,10 @@ static unsigned mutate(std::vector<uint64_t>& t, const TapeDraw* log, size_t n, 
             bool done = false;
             for (int tries = 0; tries < 5 && !done; tries++) {
                 size_t d2 = rng() % n;
-                if (v <= log[d2].upper) t[log[d2].index] = v, done = true;
+                if (v <= log[d2].upper) {
+                    if (rec) rec->push_back({COPY, d2, val(d2), v, 0});
+                    t[log[d2].index] = v, done = true;
+                }
             }
             if (done) apply(COPY);
             else value_op();
@@ -285,6 +324,8 @@ template <class E> static void worker(int w, std::vector<int> cpus) {
     std::vector<uint64_t> tape;  // the generator's input tape (empty without a parent)
     std::string output;          // generator output (tape recipes: for the dedup hash)
     RecentHashes recent;
+    std::vector<OpRec> recs;  // --op-log: this child's applied operators
+    const bool oplog = !cfg.op_log.empty();
     auto dead = [&](const Server::Result& r) {
         if (r.kind != Server::Result::SERVER_DEAD) return false;
         fprintf(stderr, "worker %d: server died\n", w), failed = stop_flag = true;
@@ -305,19 +346,22 @@ template <class E> static void worker(int w, std::vector<int> cpus) {
         E r{}, picked{};  // a. recipe (random mode still picks, so pool traffic is identical)
         bool use = pool && std::bernoulli_distribution(0.9)(rng) && pool->pick(rng, picked);
         unsigned ops = 0;
+        recs.clear();
         if constexpr (TAPE) {
             tape.clear();
             if (use) {  // child: the parent's variant and tape, mutated
                 r = picked;
                 tape.assign(arena->words(picked.tape), arena->words(picked.tape) + picked.tape.words);
-                ops = mutate(tape, arena->draws(picked.tape), picked.tape.draws, r.size, rng, st);
+                ops = mutate(tape, arena->draws(picked.tape), picked.tape.draws, r.size, rng, st, oplog ? &recs : nullptr);
             } else {
                 random_recipe(r);
             }
         } else if (use && cfg.recipes == "guided") {
             r = picked;
-            double s = std::llround(r.size * factors[rng() % 6]);
+            double factor = factors[rng() % 6], s = std::llround(r.size * factor);
+            uint16_t old = r.size;
             r.size = uint16_t(std::min<double>(std::max<double>(s, 1), cfg.max_size));
+            if (oplog) recs.push_back({SIZE, old, r.size, 0, factor});
         } else {
             random_recipe(r);
         }
@@ -348,6 +392,18 @@ template <class E> static void worker(int w, std::vector<int> cpus) {
             }
             if ((use && hash == picked.tape.input_hash) || recent.contains(hash)) kind = "dup_skip";
             else recent.insert(hash);
+        }
+        if (oplog && use && (TAPE || cfg.recipes == "guided")) {  // child line: parent, child, hashes (tape only), ops
+            char head[256];
+            uint64_t parent_hash = 0;
+            if constexpr (TAPE) parent_hash = picked.tape.input_hash;
+            bool ok_gen = g.kind == Server::Result::OK;
+            snprintf(head, sizeof head, "%llu parent %d %d %llu %s child %d %llu %s %s ops %zu", (unsigned long long)st.tests,
+                     picked.variant, picked.size, (unsigned long long)picked.seed,
+                     TAPE ? std::to_string(parent_hash).c_str() : "-", r.size, (unsigned long long)r.seed,
+                     TAPE && ok_gen ? std::to_string(hash).c_str() : "-", TAPE && ok_gen ? (hash != parent_hash ? "1" : "0") : "-",
+                     recs.size());
+            op_lines[w] += std::to_string(w) + " " + head + op_text(recs) + "\n";
         }
         if (kind.empty()) {
             auto rr = ref.run("", "", T);  // c
@@ -439,6 +495,7 @@ int main(int argc, char** argv) {
     S("--build", cfg.build), S("--checker", cfg.checker), S("--fast", cfg.fast), S("--mode", cfg.mode);
     S("--recipes", cfg.recipes), S("--strategy", cfg.strategy), S("--cpus", cfg.cpus), S("--out", cfg.out), S("--bug-dir", cfg.bug_dir);
     S("--gen-template", cfg.gen_template), S("--size-dist", cfg.size_dist), S("--tape-mut", cfg.tape_mut), S("--dump-tapes", cfg.dump_tapes);
+    S("--op-log", cfg.op_log);
     {
         std::vector<std::string> tmp;
         if (!gen_argv(cfg.gen_template, tmp)) return 2;
@@ -479,6 +536,7 @@ int main(int argc, char** argv) {
         admitted.resize(cfg.workers);
     }
     stats = std::make_unique<Stats[]>(cfg.workers);
+    op_lines.resize(cfg.workers);
     std::vector<std::thread> ts;
     for (int w = 0; w < cfg.workers; w++) ts.emplace_back(tape ? worker<TapeEntry> : worker<Entry>, w, cpus);
     {
@@ -519,6 +577,13 @@ int main(int argc, char** argv) {
     int cov_features = 0;  // distinct (edge, hit-bucket) pairs
     for (uint8_t b : all) cov_features += __builtin_popcount(b);
     if (!cfg.dump_tapes.empty() && !dump_tapes()) return 1;
+    if (!cfg.op_log.empty()) {  // worker by worker, each in test order
+        FILE* lf = fopen(cfg.op_log.c_str(), "w");
+        if (!lf) return perror(cfg.op_log.c_str()), 1;
+        fprintf(lf, "# worker test parent variant size seed input_hash child size seed input_hash changed ops n op:a:b:c...\n");
+        for (auto& lines : op_lines) fputs(lines.c_str(), lf);
+        fclose(lf);
+    }
 
     FILE* f = fopen(cfg.out.c_str(), "w");
     if (!f) { perror(cfg.out.c_str()); return 1; }
@@ -526,11 +591,11 @@ int main(int argc, char** argv) {
                "\"fast\": \"%s\", \"mode\": \"%s\", \"strategy\": \"%s\", \"workers\": %d, \"tests\": %lld, "
                "\"time_limit\": %g, \"seed\": %lld, \"extra_ops\": %d, \"write_frac\": %g, \"cpus\": \"%s\", "
                "\"timeout_ms\": %d, \"recipes\": \"%s\", \"out\": \"%s\", \"bug_dir\": \"%s\", \"gen_template\": \"%s\", \"size_dist\": \"%s\", "
-               "\"arena_mb\": %lld, \"tape_mut\": \"%s\", \"tape_span\": %d, \"tape_capture\": %d},\n",
+               "\"arena_mb\": %lld, \"tape_mut\": \"%s\", \"tape_span\": %d, \"tape_capture\": %d, \"op_log\": \"%s\"},\n",
             esc(cfg.build).c_str(), cfg.checker.c_str(), cfg.max_size, cfg.variants, cfg.fast.c_str(), cfg.mode.c_str(),
             cfg.strategy.c_str(), cfg.workers, cfg.tests, cfg.time_limit, cfg.seed, cfg.extra_ops, cfg.write_frac,
             cfg.cpus.c_str(), cfg.timeout_ms, cfg.recipes.c_str(), esc(cfg.out).c_str(), esc(cfg.bug_dir).c_str(), esc(cfg.gen_template).c_str(),
-            cfg.size_dist.c_str(), cfg.arena_mb, cfg.tape_mut.c_str(), cfg.tape_span, cfg.tape_capture);
+            cfg.size_dist.c_str(), cfg.arena_mb, cfg.tape_mut.c_str(), cfg.tape_span, cfg.tape_capture, esc(cfg.op_log).c_str());
     fprintf(f, "  \"wall_s\": %.4f, \"tests\": %lld, \"tests_per_sec\": %.1f, \"mean_size\": %.2f,\n", wall,
             tot.tests, tot.tests / wall, tot.tests ? double(tot.size_sum) / tot.tests : 0.0);
     fprintf(f, "  \"outcomes\": {\"ok\": %lld, \"WA\": %lld, \"RE\": %lld, \"TLE\": %lld, \"invalid\": %lld, \"gen_skip\": %lld, "

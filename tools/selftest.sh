@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # End-to-end self-test: build everything, then the golden generator hashes, the fork-server edge cases
 # and checker outcome mapping (C++, and Python agreeing with it), the random.h tape session (in-process and
-# through the fork-server), tape recipes (strategy guard, admitted entries replay), the pool correctness
+# through the fork-server), tape recipes (strategy guard, admitted entries replay, --op-log changes nothing),
+# the pool correctness
 # check (plain and under ThreadSanitizer, with ASLR off because GCC 13 TSan needs it), the tape arena stress
 # test (plain and TSan), the
 # aggregation self-test, a quick correct-solution sanity run on all problems, and the analysis server's
@@ -42,6 +43,29 @@ tape_smoke() {  # short tape-rwlock run on majority_voting; every admitted entry
     return $rc
 }
 
+oplog_run() {  # oplog_run <recipes> <name> [flags]: 1-worker majority_voting scale run, seed 7
+    local d=/dev/shm/cf_selftest_oplog_$$ dump=()
+    [ "$1" = tape ] && dump=(--dump-tapes "$d.$2.tapes")
+    build/fuzzer --build build/majority_voting --mode scale --strategy noshare --recipes "$1" --workers 1 --tests 600 \
+        --seed 7 --out "$d.$2.json" "${dump[@]}" "${@:3}"
+}
+
+oplog_check() {  # --op-log is logging only: same seed, log off vs on -> identical results; two logs identical
+    local d=/dev/shm/cf_selftest_oplog_$$ rc=0 r
+    for r in tape guided; do
+        oplog_run $r off && oplog_run $r on1 --op-log "$d.on1.log" && oplog_run $r on2 --op-log "$d.on2.log" || { rc=1; break; }
+        [ -s "$d.on1.log" ] && cmp "$d.on1.log" "$d.on2.log" || { echo "$r: op logs empty or different"; rc=1; }
+        [ $r = guided ] || cmp "$d.off.tapes" "$d.on1.tapes" || { echo "$r: admitted entries differ"; rc=1; }
+        python3 -c 'import json, sys
+a, b = (json.load(open(f)) for f in sys.argv[1:])
+res = lambda d: {k: v for k, v in d.items() if k not in ("wall_s", "tests_per_sec", "config")}
+cfg = lambda d: {k: v for k, v in d["config"].items() if k not in ("out", "op_log")}
+sys.exit(res(a) != res(b) or cfg(a) != cfg(b))' "$d.off.json" "$d.on1.json" || { echo "$r: results differ"; rc=1; }
+        rm -f "$d".*
+    done
+    return $rc
+}
+
 tape_tests() {  # core/tests/tape_test.cpp around one generator per group
     for g in arrays strings graphs; do build/tests/tape_test_$g || return 1; done
 }
@@ -57,6 +81,7 @@ check "tape session in random.h (tape_test x3)"       tape_tests
 check "tape memfd via fork-server (tape_server_test)" build/tests/tape_server_test
 check "--recipes tape rejects untested strategies"    tape_strategy_check
 check "tape recipes: admitted entries replay (T2)"    tape_smoke
+check "--op-log changes no result (log on vs off)"    oplog_check
 check "checker outcome mapping (checker_test)"        build/tests/checker_test
 check "C++ and Python checker mapping agree"          python3 tools/checker_agree_test.py
 check "pool correctness (pool_bench --check)"         build/pool_bench --check
