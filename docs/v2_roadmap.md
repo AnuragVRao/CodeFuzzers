@@ -194,8 +194,8 @@ OUTPUT: diff summary, test results, T3 table, commit hash.
 Part 1. Write docs/v2_pilot_plan.md with the content below, SHOW IT TO THE USER, and commit only after the user confirms the kill criterion (they may change the numbers before the commit, never after). Print commit hash + timestamp. Do not run anything before this commit.
 - Purpose: decide whether to proceed to v2 confirmatory. The pilot is exploratory only.
 - Problems: the 3 frozen focus problems.
-- Arms: random strategy, tape-noshare, tape-rwlock. 8 workers. n = 50 per arm per problem. Seeds 5000 + r.
-- Kill criterion: PROCEED only if (a) for draw-level tape mutation, measured in Part 2 (2,000 children per problem): mut_changed_input >= 0.80 AND median mut_similarity >= 0.50, on all 3 focus problems, AND (b) at least one problem has median tests-to-bug for tape-noshare or tape-rwlock <= 0.70x the random strategy. Otherwise STOP tape work.
+- Arms: random-capture (the v2 random arm: random strategy + --tape-capture, v2 build), tape-noshare, tape-rwlock. 8 workers. n = 50 per arm per problem. Seeds 5000 + r.
+- Kill criterion: PROCEED only if (a) for draw-level tape mutation, measured in Part 2 (2,000 children per problem): mut_changed_input >= 0.80 AND median mut_similarity >= 0.50, on all 3 focus problems, AND (b) at least one problem has median tests-to-bug for tape-noshare or tape-rwlock <= 0.70x random-capture. Otherwise STOP tape work.
 - Note: v1's mut_changed_input is ~1 by construction (every child draws a fresh seed); mut_similarity is the comparable steering measure.
 - The span ablation is not part of the decision.
 
@@ -256,7 +256,7 @@ OUTPUT: diff summary, test results, commit hash.
 
 Part 1. Write docs/v2_prereg.md, show it to the user, commit after confirmation, before any run:
 - Problems: the 3 frozen focus problems.
-- Confirmatory family: random strategy vs tape-noshare, random strategy vs tape-rwlock, tape-noshare vs tape-rwlock.
+- Confirmatory family: random-capture vs tape-noshare, random-capture vs tape-rwlock, tape-noshare vs tape-rwlock (random-capture = the v2 random arm: random strategy + --tape-capture).
 - Exploratory family (reported separately): tape-rwlock-span, tape-rwlock-vp (if Step 3 done).
 - n = 1000 per arm per problem, 8 workers, seeds 20000 + r. Time budget 20 s; censored runs = +inf.
 - Primary metric: executed tests-to-bug. Secondary: generated tests, wall time.
