@@ -10,6 +10,8 @@ Formulas (tps = tests_per_sec; medians and quartiles over the repeats of one con
   vs_noshare     = tps_median / tps_median(noshare, same problem/K/F/workers)
   predicted_tps  = min(noshare tps_median at this W, pool_bench tests_per_sec at this strategy/K/F/threads)
   tests_to_bug   = bug_tests_before + 1 (the failing test is counted, so always >= 1)
+  executed_to_bug = bug_executed_before + 1 (v2 runs: tests that ran ref, i.e. without gen_skip and dup_skip);
+                   hunt rows get executed_to_bug_* only if every run of the group has it (descriptive, no tests)
   hunt censoring = a run without a bug counts as +inf tests/time; a quantile touching +inf -> null + flag
   hunt_tests     = two-sided Mann-Whitney U on tests-to-bug (censored = +inf); p_holm = Holm within a family:
                    "exploratory" (hunt) and "confirmatory" (hunt-focus)
@@ -114,10 +116,24 @@ def hunt_values(rows):
     return g
 
 
-def hunt_section(g, kinds):
+def executed_values(rows):
+    """(problem, strategy, workers) -> executed tests-to-bug list (+inf if censored); None if any run lacks it."""
+    g = defaultdict(list)
+    for r in rows:
+        key, found = (r["problem"], r["strategy"], int(r["workers"])), r["bug_found"] == "1"
+        if g.get(key, []) is None or (found and r.get("bug_executed_before", "") == ""):
+            g[key] = None
+        else:
+            g[key].append(float(r["bug_executed_before"]) + 1 if found else INF)
+    return g
+
+
+def hunt_section(g, kinds, ex=None):
+    ex = ex or {}
     return [dict(problem=p, strategy=s, workers=w, n=len(t), found=sum(map(math.isfinite, t)),
                  censored=sum(not math.isfinite(x) for x in t), kind=kinds.get(p),
-                 **qstats(t, "tests_to_bug"), **qstats(tm, "time"), values=[num(x) for x in t])
+                 **qstats(t, "tests_to_bug"), **qstats(tm, "time"), values=[num(x) for x in t],
+                 **(qstats(ex[(p, s, w)], "executed_to_bug") if ex.get((p, s, w)) else {}))
             for (p, s, w), (t, tm) in sorted(g.items())]
 
 
@@ -347,7 +363,7 @@ def main():
     gallery = json.loads(gallery_path.read_text()) if gallery_path.exists() else []
 
     hv = hunt_values(hunt_rows_raw)
-    hunt = hunt_section(hv, kinds)
+    hunt = hunt_section(hv, kinds, executed_values(hunt_rows_raw))
     tests = hunt_tests_section(hv, "exploratory") + hunt_tests_section(hunt_values(only("hunt-focus")), "confirmatory", 10000)
     for fam in ("exploratory", "confirmatory"):
         rows = [t for t in tests if t["family"] == fam]

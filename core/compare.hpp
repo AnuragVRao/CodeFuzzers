@@ -3,9 +3,12 @@
 // i.e. differences in spaces, tabs and newlines are ignored (same rule as tools/sanity.py).
 // A file that cannot be read compares unequal.
 // checker_outcome(exit_code) classifies a "custom" checker's result (see below).
+// hash_bytes(s) is the 64-bit hash of a generator output (tape dedup and TapeHandle::input_hash).
 #pragma once
 #include <cctype>
+#include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <string>
 
 inline bool read_file(const std::string& path, std::string& out) {
@@ -42,4 +45,18 @@ inline const char* checker_outcome(int exit_code) {
         case 3: return "ref_fail";
         default: return "checker_error";
     }
+}
+
+// 64-bit hash of a byte string: 8-byte chunks, splitmix64-style mixing.
+inline uint64_t hash_bytes(const std::string& s) {
+    uint64_t h = 0x9e3779b97f4a7c15ULL ^ s.size(), w;
+    size_t i = 0;
+    for (; i + 8 <= s.size(); i += 8) {
+        memcpy(&w, s.data() + i, 8);
+        h = (h ^ w) * 0xbf58476d1ce4e5b9ULL, h ^= h >> 31;
+    }
+    w = 0;
+    memcpy(&w, s.data() + i, s.size() - i);
+    h = (h ^ w) * 0x94d049bb133111ebULL, h ^= h >> 29;
+    return h;
 }

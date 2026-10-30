@@ -69,6 +69,26 @@ header {magic, cap, log_cap, in_off, out_off, log_off, out_len, log_len, consume
 - The child gets a fresh seed (used only past the end of the tape).
 - Dedup: hash generator output; if it equals the parent's stored input hash or is in a per-worker set of the last 1024 hashes, skip ref/fast and count dup_skip. Tests with no parent compare only against the per-worker set.
 - Diagnostic only (never confirmatory): --tape-mut byte replaces one random byte of one random tape word.
+- As built (core/fuzzer.cpp, Step 2d):
+  - Recent-hash set: per worker, the last 1024 distinct output hashes (compare.hpp hash_bytes, 64-bit): an
+    unordered_set for lookup plus a 1024-slot ring buffer for FIFO eviction (inserting into a full set evicts the
+    oldest hash). Only non-duplicate outputs are inserted, so the ring holds no duplicates. Not shared between workers.
+  - Every test (with or without a parent) runs the generator in a tape session with budget 1,000,000 words. A test
+    without a parent has an empty input tape, so its output equals v1's for the same seed.
+  - m = min(8, 1 + Geometric(0.5)) where Geometric counts failures (mean 1, so E[m] is about 2). Span length
+    L = 1 + Geometric(p = 1/9) (8 failures on average, so L averages 9).
+  - A parent without draws can only take the size op.
+  - copy: 5 attempts in total (the first d2 and up to 4 retries); after that a value op on a random draw, counted as value.
+  - mut_changed_input = mut_changed / mutated, over children whose generator run was OK (a child that is gen_skip
+    has no output). Per operator (JSON "ops"): applied = applications, children = children containing that operator
+    at least once, changed = those children whose input hash differs from the parent's.
+  - executed = tests that ran ref (not gen_skip, not dup_skip); first_bug.executed_before counts them like
+    tests_before counts generated tests; executed tests-to-bug = executed_before + 1.
+  - --tape-capture 1 (random strategy only): every test runs through an empty tape session and nothing is admitted;
+    with 1 worker it gives exactly the plain random strategy's first-bug recipes and tests_before. Arm "random-capture".
+  - Bugs found by tape recipes save the generator's input tape as <bug-dir>/tape.bin (raw uint64 words); with the
+    recipe's seed and size it reproduces input.txt. --dump-tapes FILE writes every admitted entry
+    (variant size seed input_hash words w0 w1 ...); core/tests/tape_replay_check regenerates them.
 
 ### Metrics added
 generated, executed, dup_skip, mut_changed_input (fraction of mutated children whose input hash differs from the parent's), arena_bytes, arena_full, gen_budget_exceeded, tape_overflow.

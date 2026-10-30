@@ -63,6 +63,7 @@ def tool_targets():
             exe(BUILD / "tests/server_test", t / "server_test.cpp", ["-O2"], [srv]),
             exe(BUILD / "tests/checker_test", t / "checker_test.cpp", ["-O2"], [srv, cmp_]),
             exe(BUILD / "tests/tape_server_test", t / "tape_server_test.cpp", ["-O2"], [srv]),
+            exe(BUILD / "tests/tape_replay_check", t / "tape_replay_check.cpp", ["-O2"], [srv, cmp_]),
             exe(BUILD / "tests/gen_tape_toy", t / "gen_tape_toy.cpp", ["-O2", "-I", str(problems.DATASET / "common")],
                 [problems.DATASET / "common/random.h"], runtime=True),
             exe(BUILD / "fuzzer", CORE / "fuzzer.cpp", ["-O2", "-pthread"], [srv, pool, cmp_, arena]),

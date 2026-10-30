@@ -17,6 +17,12 @@ RAW = ROOT / "results" / "raw"
 FUZZER = ROOT / "build" / "fuzzer"
 CPU_ORDER = [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 1, 3, 5, 7, 9, 11, 13, 15, 17, 19]
 STRATS = ["global", "sharded", "rwlock", "snapshot", "noshare"]
+# v2 arms (docs/tape_design.md): arm -> (fuzzer --strategy, --recipes override or None, extra fuzzer flags).
+# Any other strategy name is a v1 arm and is passed through unchanged.
+ARMS = {"random-capture": ("random", None, ["--tape-capture", "1"]),
+        "tape-noshare": ("noshare", "tape", []),
+        "tape-rwlock": ("rwlock", "tape", []),
+        "tape-rwlock-span": ("rwlock", "tape", ["--tape-span", "1"])}
 # ETA model: single-worker tests/s and speed-up per worker count (from Step 6, test 5).
 BASE_TPS = 1450
 SPEEDUP = {1: 1, 2: 2, 4: 3.7, 6: 4.9, 8: 5.9, 12: 7.1, 16: 8.1, 20: 8.6}
@@ -93,7 +99,7 @@ def predict(run, bugs):
         return 0.3 + run["tests"] / tps
     r = bugs[run["problem"]]["rate"]
     rate = max((r["5"] + r["20"] + r["max"]) / 300, 1e-4)  # rough per-test bug probability
-    expected = 1 / rate if run["strategy"] == "random" else 0.7 / rate
+    expected = 1 / rate if run["strategy"].startswith("random") else 0.7 / rate
     return 0.3 + min(run["time_limit"], expected / tps)
 
 
@@ -107,13 +113,14 @@ def command(exp, run, cfg, tmp_out):
     w = run["workers"]
     cpus = "" if run["pin"] == 0 else ",".join(map(str, CPU_ORDER[:w]))
     bug_dir = out_path(exp, run).with_suffix("")  # .../<stem>/ (only created if a bug is found)
+    strategy, recipes, extra = ARMS.get(run["strategy"], (run["strategy"], None, []))
     return [str(FUZZER), "--build", str(ROOT / "build" / run["problem"]), "--checker", p["checker"],
             "--max-size", str(p["max_size"]), "--variants", str(p["variants"]),
             "--fast", "sol" if run["mode"] == "scale" else "bug", "--mode", run["mode"],
-            "--strategy", run["strategy"], "--recipes", run["recipes"], "--workers", str(w), "--tests", str(run["tests"] or 1),
+            "--strategy", strategy, "--recipes", recipes or run["recipes"], "--workers", str(w), "--tests", str(run["tests"] or 1),
             "--time-limit", str(run["time_limit"] or 60), "--seed", str(1000 + run["repeat"]),
             "--extra-ops", str(run["k"]), "--write-frac", str(run["f"]), "--cpus", cpus,
-            "--out", str(tmp_out), "--bug-dir", str(bug_dir)]
+            "--out", str(tmp_out), "--bug-dir", str(bug_dir), *extra]
 
 
 def problem_config():
