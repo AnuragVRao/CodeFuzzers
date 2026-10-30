@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Flattens every fuzzer result under results/raw/<experiment>/<problem>/*.json into
 results/runs.csv, one row per run (config, throughput, coverage, first bug, outcome counts, git
-commit/dirty as stamped by run.py, recipes and mean_size; empty for older runs without them).
+commit/dirty as stamped by run.py, recipes, mean_size, ref_fail and checker_error; empty for older runs
+without them).
 The repeat index and pinning come from the file name (..._r<R>[_pinX].json).
 Usage: python3 tools/flatten.py
 """
@@ -12,7 +13,8 @@ RAW = problems.ROOT / "results" / "raw"
 OUT = problems.ROOT / "results" / "runs.csv"
 COLS = ["experiment", "problem", "strategy", "workers", "K", "F", "repeat", "pinned", "wall_s", "tests",
         "tests_per_sec", "cov_features", "pool_entries", "new_cov_reports", "bug_found", "bug_tests_before",
-        "bug_time_s", "bug_kind", "recipes", "mean_size", "ok", "WA", "RE", "TLE", "invalid", "gen_skip", "git_commit", "git_dirty"]
+        "bug_time_s", "bug_kind", "recipes", "mean_size", "ok", "WA", "RE", "TLE", "invalid", "gen_skip", "ref_fail",
+        "checker_error", "git_commit", "git_dirty"]
 
 
 def main():

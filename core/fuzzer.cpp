@@ -5,7 +5,8 @@
 // exactly --tests tests in total; "hunt" stops all workers at the first bug (or --time-limit).
 // --recipes random: tests use random recipes but pool traffic (pick/report/extra ops) is unchanged,
 // so every strategy does equal work per test. Timed region: start barrier -> last worker done.
-// JSON summary to --out, first bug to --bug-dir.
+// JSON summary to --out, first bug to --bug-dir. A custom checker exiting with _fail ("ref_fail") or
+// abnormally ("checker_error", see compare.hpp) is counted, with its first recipe, but is never a bug.
 #include <pthread.h>
 #include <sched.h>
 #include <sys/stat.h>
@@ -36,6 +37,7 @@ struct Config {
 
 struct alignas(64) Stats {
     long long tests = 0, ok = 0, WA = 0, RE = 0, TLE = 0, invalid = 0, gen_skip = 0, news = 0, size_sum = 0;
+    long long ref_fail = 0, checker_error = 0;
     Clock::time_point end;
 };
 
@@ -46,6 +48,12 @@ struct FirstBug {
     int worker = 0, variant = 0, size = 0;
     uint64_t seed = 0;
     std::string kind;
+};
+
+struct FirstNote {  // first ref_fail / checker_error: recorded for inspection, never stops a run
+    bool found = false;
+    int worker = 0, variant = 0, size = 0;
+    uint64_t seed = 0;
 };
 
 static Config cfg;
@@ -60,6 +68,7 @@ static int arrived = 0;
 static bool go = false;
 static Clock::time_point t0;
 static FirstBug first_bug;
+static FirstNote first_ref_fail, first_checker_error;
 
 // AFL-style hit-count buckets {1},{2},{3},{4-7},{8-15},{16-31},{32-127},{128+} -> bits 0..7.
 static const struct Buckets {
@@ -92,6 +101,11 @@ static void record_bug(int w, const Entry& r, const std::string& kind, const std
     std::ofstream(cfg.bug_dir + "/input.txt", std::ios::binary) << src.rdbuf();
     std::ofstream(cfg.bug_dir + "/recipe.txt") << "variant " << int(r.variant) << "\nsize " << r.size << "\nseed "
                                                << r.seed << "\nkind " << kind << "\nworker " << w << "\n";
+}
+
+static void record_note(FirstNote& n, int w, const Entry& r) {
+    std::lock_guard<std::mutex> g(bug_m);
+    if (!n.found) n = {true, w, r.variant, r.size, r.seed};
 }
 
 // {seed}/{size} tokens -> @SEED@/@SIZE@ (see fs_runtime.cpp); false if a token only contains one.
@@ -184,7 +198,7 @@ static void worker(int w, std::vector<int> cpus) {
                 else if (custom) {
                     auto cr = checker.run("", "", T);
                     if (dead(cr)) break;
-                    kind = cr.kind == Server::Result::OK ? "ok" : "WA";
+                    kind = checker_outcome(cr.exit_code);  // ref_fail / checker_error are not bugs
                 } else kind = same_tokens(out_fast, out_ref) ? "ok" : "WA";
                 to_classes(fast.cov_map, cls.data());
                 if (!pool) {  // random: no guidance, just remember what was covered
@@ -203,8 +217,11 @@ static void worker(int w, std::vector<int> cpus) {
             record_bug(w, r, kind, in);
             if (cfg.mode == "hunt") stop_flag = true;
         }
+        if (kind == "ref_fail") record_note(first_ref_fail, w, r);
+        if (kind == "checker_error") record_note(first_checker_error, w, r);
         (kind == "ok" ? st.ok : kind == "WA" ? st.WA : kind == "RE" ? st.RE : kind == "TLE" ? st.TLE
-                       : kind == "invalid" ? st.invalid : st.gen_skip)++;
+                       : kind == "invalid" ? st.invalid : kind == "ref_fail" ? st.ref_fail
+                       : kind == "checker_error" ? st.checker_error : st.gen_skip)++;
         completed++;
     }
     st.end = Clock::now();  // timed region ends here; servers stop below (destructors)
@@ -268,6 +285,7 @@ int main(int argc, char** argv) {
         t1 = std::max(t1, s.end);
         tot.tests += s.tests, tot.size_sum += s.size_sum, tot.ok += s.ok, tot.WA += s.WA, tot.RE += s.RE, tot.TLE += s.TLE;
         tot.invalid += s.invalid, tot.gen_skip += s.gen_skip, tot.news += s.news;
+        tot.ref_fail += s.ref_fail, tot.checker_error += s.checker_error;
     }
     double wall = std::chrono::duration<double>(t1 - t0).count();
     std::vector<uint8_t> all(pool_impl::MAP_SIZE, 0), m;
@@ -292,8 +310,9 @@ int main(int argc, char** argv) {
             cfg.cpus.c_str(), cfg.timeout_ms, cfg.recipes.c_str(), esc(cfg.out).c_str(), esc(cfg.bug_dir).c_str(), esc(cfg.gen_template).c_str(), cfg.size_dist.c_str());
     fprintf(f, "  \"wall_s\": %.4f, \"tests\": %lld, \"tests_per_sec\": %.1f, \"mean_size\": %.2f,\n", wall,
             tot.tests, tot.tests / wall, tot.tests ? double(tot.size_sum) / tot.tests : 0.0);
-    fprintf(f, "  \"outcomes\": {\"ok\": %lld, \"WA\": %lld, \"RE\": %lld, \"TLE\": %lld, \"invalid\": %lld, \"gen_skip\": %lld},\n",
-            tot.ok, tot.WA, tot.RE, tot.TLE, tot.invalid, tot.gen_skip);
+    fprintf(f, "  \"outcomes\": {\"ok\": %lld, \"WA\": %lld, \"RE\": %lld, \"TLE\": %lld, \"invalid\": %lld, \"gen_skip\": %lld, "
+               "\"ref_fail\": %lld, \"checker_error\": %lld},\n",
+            tot.ok, tot.WA, tot.RE, tot.TLE, tot.invalid, tot.gen_skip, tot.ref_fail, tot.checker_error);
     fprintf(f, "  \"new_cov_reports\": %lld, \"cov_features\": %d, \"pool_entries\": %zu,\n  \"per_worker_tests\": [",
             tot.news, cov_features, entries);
     for (int w = 0; w < cfg.workers; w++) fprintf(f, "%s%lld", w ? ", " : "", stats[w].tests);
@@ -304,6 +323,12 @@ int main(int argc, char** argv) {
                    "\"size\": %d, \"seed\": %llu}",
                 first_bug.time_s, first_bug.tests_before, first_bug.worker, first_bug.kind.c_str(), first_bug.variant,
                 first_bug.size, (unsigned long long)first_bug.seed);
+    for (auto [name, n] : {std::pair<const char*, FirstNote*>{"first_ref_fail", &first_ref_fail}, {"first_checker_error", &first_checker_error}}) {
+        fprintf(f, ",\n  \"%s\": ", name);
+        if (!n->found) fprintf(f, "null");
+        else fprintf(f, "{\"worker\": %d, \"variant\": %d, \"size\": %d, \"seed\": %llu}", n->worker, n->variant, n->size,
+                     (unsigned long long)n->seed);
+    }
     fprintf(f, "\n}\n");
     fclose(f);
     return failed ? 1 : 0;
