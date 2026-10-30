@@ -25,6 +25,9 @@ header {magic, cap, log_cap, in_off, out_off, log_off, out_len, log_len, consume
 - magic carries the version in its low bits ("CFTAPE" v1). cap, log_cap and the byte offsets are set once by the worker. in_len, budget and fallback_zero travel in the per-test Request (with the arm flag), not in the header.
 - flags: OVERFLOW = 1, BUDGET = 2, COMPLETE = 4. Before forking an armed request the SERVER clears out_len, log_len, consumed and flags. On a normal exit (exit() or return from main, any exit code) the child writes out_len and log_len (capped at CAP / LOGCAP), consumed (all words, may exceed CAP), and LAST flags with COMPLETE. A budget exit (_Exit 85), a crash or a timeout writes no header field, so COMPLETE stays 0.
 - The output-tape and draw-log spans are valid only when COMPLETE is set (and only until the next request on that server). Step 2d must never admit a child without COMPLETE (and never one with OVERFLOW).
+- Admission rule (Step 2d on): a tape child may enter the pool only if its generator status is OK AND COMPLETE is set AND
+  OVERFLOW is not set (BUDGET implies status not OK), and it reached new coverage. Generators that exit non-zero (skip a
+  seed) still set COMPLETE, so the status check is required.
 - Layout rule: the shm header contains ONLY offsets, lengths, flags and counters, never pointers. The child builds its local session struct (pointers) from the mapping after fork, before main().
 - CAP = 97,930 words, LOGCAP = 79,446 draw-log entries: 2x the largest raw-word and draw counts over ALL 37
   generator binaries, measured with an instrumented copy of random.h (scratchpad only):

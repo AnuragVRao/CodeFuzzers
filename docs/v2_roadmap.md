@@ -159,7 +159,7 @@ Requirements:
 
 Tests:
 - T1. Golden check + selftest pass.
-- T2. Scale benchmark, all 5 lock strategies x {1, 8, 20} workers x 5 repeats, before (git worktree) vs after. Report median tests_per_sec per cell, percent change, and spread (= min-max range of the "before" repeats). STOP if in any cell the after-median differs from the before-median by more than 5% AND lies outside the before min-max range.
+- T2. Scale benchmark on range_add_range_min, --recipes random, 2,500 tests per worker, K=50, F=0.5, pinned workers: all 5 lock strategies x {1, 8, 20} workers x 5 repeats, before (git worktree) vs after. Report median tests_per_sec per cell, percent change, and spread (= min-max range of the "before" repeats). STOP if in any cell the after-median differs from the before-median by more than 5% AND lies outside the before min-max range.
 - T3. Stress test: 20 threads admitting and picking tape entries for 10 s under rwlock and sharded; every picked tape hashes to its recorded hash. Run once under -fsanitize=thread.
 
 OUTPUT: diff summary, T2 table, T3 result incl. TSan output, commit hash.
