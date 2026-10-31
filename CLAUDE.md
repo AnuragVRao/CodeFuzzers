@@ -20,11 +20,13 @@ v3 work follows docs/v3_roadmap.md. Read it before any v3 task.
     fs_runtime.cpp  fork-server + trace-pc coverage runtime linked into every binary
     server.hpp      client side (posix_spawn, pipes, memfd coverage map)
     pool.hpp        Pool interface + 5 strategies (global, sharded, rwlock, snapshot, noshare)
-    fuzzer.cpp      the multi-threaded fuzzer (scale / hunt; v2 --recipes tape, --tape-capture, --op-log), JSON summary
+    fuzzer.cpp      the multi-threaded fuzzer (scale / hunt; v2 --recipes tape, --tape-capture, --op-log;
+                    v3 --value-profile, --splice, --pool-cap), JSON summary
     pool_bench.cpp  pool-only micro-benchmark and --check; smoke.cpp single-threaded e2e test
     compare.hpp     token comparison, checker_outcome(), hash_bytes()
-    deep_bug.hpp    v3 deep-bug guard + output perturbation, included by sol_bug_deep.cpp (built as fast_bug_deep)
-    arena.hpp       v2 tape arena + TapeHandle/TapeEntry; mutate.hpp  v2 tape mutation operators
+    deep_bug.hpp    v3 deep-bug guard + output perturbation, included by sol_bug_deep.cpp (built as fast_bug_deep;
+                    -DCF_NO_PERTURB: fast_bug_deep_noperturb, guards kept, output never changed)
+    arena.hpp       v2 tape arena + TapeHandle/TapeEntry (v3: origin); mutate.hpp  tape mutation operators (v3: splice)
     part2.cpp       v2 Step 2e Part 2 children generator (run by tools/part2.py)
     tape_file_runtime.cpp  file-based tape sessions (CF_TAPE_* env vars) for the build/tape/ generators (Step S)
     tests/          fork-server edge cases (server_test + crash/hang/exit3/exit_code/gen_named/gen_seedonly),

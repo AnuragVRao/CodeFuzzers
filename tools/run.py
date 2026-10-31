@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Experiment orchestrator: runs build/fuzzer strictly one run at a time, in a randomised block design.
-Usage: python3 tools/run.py --exp scale|hunt|pinning|hunt-focus|pilot --preset quick|full [--dry-run]
+Usage: python3 tools/run.py --exp scale|hunt|pinning|hunt-focus|pilot|v3 --preset quick|full [--dry-run]
 Repeat r is one block: every configuration of the experiment, shuffled with random.Random(1000 + r);
 blocks run in order (r = 0, 1, ...). One discarded warm-up run (to /tmp) precedes the first measured run.
 Each run writes results/raw/<exp>/<problem>/<strategy>_w<W>_k<K>_f<F>_r<R>[_pinX].json and is skipped if
@@ -10,6 +10,9 @@ hunt-focus and pinning use guided recipes.
 pilot (v2 Step 2e, docs/v2_pilot_plan.md; full preset only): arms random-capture, tape-noshare, tape-rwlock on the
 3 focus problems, 8 workers, hunt, 20 s, n = 200; run r uses --seed 5000+r and block seed 5000+r (shuffle of
 block r), recorded as "block_seed" in each run's JSON; the discarded warm-up uses development seed 999.
+v3 (docs/v3_roadmap.md Step V4, frozen at the V3 commit; full preset only): arms vp-noshare, vp-rwlock and
+random-capture (reference) on the 3 deep problems (fast = sol_bug_deep), 8 workers, hunt, 120 s, n = 100; run r uses
+--seed 6000+r and block seed 6000+r (seeds 6000-6099); warm-up seed 999.
 """
 import argparse, json, os, random, subprocess, time
 from pathlib import Path
@@ -25,7 +28,11 @@ STRATS = ["global", "sharded", "rwlock", "snapshot", "noshare"]
 ARMS = {"random-capture": ("random", None, ["--tape-capture", "1"]),
         "tape-noshare": ("noshare", "tape", []),
         "tape-rwlock": ("rwlock", "tape", []),
-        "tape-rwlock-span": ("rwlock", "tape", ["--tape-span", "1"])}
+        "tape-rwlock-span": ("rwlock", "tape", ["--tape-span", "1"]),
+        # v3 (docs/v3_roadmap.md V3): value profile + cross-worker splice; the shared pool holds 8 x 4096 entries,
+        # the same total as the 8 private pools of 4096 each
+        "vp-noshare": ("noshare", "tape", ["--value-profile", "1", "--splice", "1"]),
+        "vp-rwlock": ("rwlock", "tape", ["--value-profile", "1", "--splice", "1", "--pool-cap", "32768"])}
 # ETA model: single-worker tests/s and speed-up per worker count (from Step 6, test 5).
 BASE_TPS = 1450
 SPEEDUP = {1: 1, 2: 2, 4: 3.7, 6: 4.9, 8: 5.9, 12: 7.1, 16: 8.1, 20: 8.6}
@@ -44,6 +51,9 @@ FOCUS_FILE = RAW / "hunt-focus" / "focus.json"  # written as a record of what a 
 PILOT_ARMS = ["random-capture", "tape-noshare", "tape-rwlock"]
 PILOT_SEED_BASE = 5000  # pilot run r: --seed 5000 + r, block seed 5000 + r (seeds 5000-5199)
 WARMUP_SEED = 999       # development seed for the pilot's discarded warm-up run
+V3_PROBLEMS = ["range_add_range_min", "range_affine_range_sum", "range_set_range_composite"]  # V1 qualified (bugs_deep.json)
+V3_ARMS = ["vp-noshare", "vp-rwlock", "random-capture"]
+V3_SEED_BASE, V3_REPS, V3_LIMIT = 6000, 100, 120  # run r: --seed 6000 + r (seeds 6000-6099); 120 s per run
 
 
 def record_focus():
@@ -88,6 +98,11 @@ def plan(exp, preset):
             raise SystemExit("pilot has only a full preset")
         reps = 200
         confs = [dict(conf(p, s, 8, limit=20), seed_base=PILOT_SEED_BASE) for p in FOCUS_PROBLEMS for s in PILOT_ARMS]
+    elif exp == "v3":
+        if not full:
+            raise SystemExit("v3 has only a full preset")
+        reps = V3_REPS
+        confs = [dict(conf(p, s, 8, limit=V3_LIMIT), seed_base=V3_SEED_BASE, fast="bug_deep") for p in V3_PROBLEMS for s in V3_ARMS]
     runs = []
     for r in range(reps):
         block_seed = confs[0].get("seed_base", 1000) + r  # 1000 + r for every experiment except the pilot
@@ -111,6 +126,9 @@ def predict(run, bugs):
     tps = BASE_TPS * SPEEDUP.get(run["workers"], run["workers"] * 0.45) * (0.6 if run["k"] else 1)
     if run["mode"] == "scale":
         return 0.3 + run["tests"] / tps
+    if run.get("fast") == "bug_deep":  # v3 deep bug: calibrated median tests-to-bug (bugs_deep.json, random-capture)
+        deep = json.loads((problems.DATASET / "bugs_deep.json").read_text())[run["problem"]]["rounds"][-1]["calibration"]
+        return 0.3 + min(run["time_limit"], deep["median"] / 0.693 / tps)
     r = bugs[run["problem"]]["rate"]
     rate = max((r["5"] + r["20"] + r["max"]) / 300, 1e-4)  # rough per-test bug probability
     expected = 1 / rate if run["strategy"].startswith("random") else 0.7 / rate
@@ -162,7 +180,7 @@ def git_info():
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--exp", required=True, choices=["scale", "hunt", "pinning", "hunt-focus", "pilot"])
+    ap.add_argument("--exp", required=True, choices=["scale", "hunt", "pinning", "hunt-focus", "pilot", "v3"])
     ap.add_argument("--preset", default="quick", choices=["quick", "full"])
     ap.add_argument("--dry-run", action="store_true", help="print the plan and ETA only")
     a = ap.parse_args()
@@ -213,7 +231,7 @@ def main():
         d["git_commit"], d["git_dirty"] = commit, dirty  # which code produced this result
         if "tests_per_worker" in run:
             d["tests_per_worker"] = run["tests_per_worker"]
-        if "block_seed" in run:  # pilot: the shuffle seed of this run's block
+        if "block_seed" in run:  # pilot / v3: the shuffle seed of this run's block
             d["block_seed"] = run["block_seed"]
         tmp.write_text(json.dumps(d, indent=2) + "\n")
         os.replace(tmp, out)  # only complete results count as done

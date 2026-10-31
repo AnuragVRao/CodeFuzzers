@@ -21,6 +21,7 @@ struct TapeHandle {
 };
 struct TapeEntry {  // Entry's fields (the pool code uses .hits) + the arena handle
     uint8_t variant;
+    uint8_t origin;   // v3: worker that admitted this entry (fills existing padding; size stays 48)
     uint16_t size;
     uint64_t seed;
     uint32_t hits;

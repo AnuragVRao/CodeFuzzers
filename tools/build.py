@@ -3,7 +3,7 @@
 build/fs_runtime.o (no coverage) is linked into every problem binary. Per problem in build/<name>/:
   lightweight (-O2): gen, gen_alt (if variant exists), ref, checker, verifier (plain, exit 0 = valid
   input on stdin);  path-tracking (-O2 trace-pc,
-  -no-pie): fast_sol, fast_bug, fast_bug_deep (v3, if sol_bug_deep.cpp exists).  Also smoke, pool_bench(_tsan), fuzzer(_tsan), part2, tests/* (tape_test_<group>:
+  -no-pie): fast_sol, fast_bug, fast_bug_deep and fast_bug_deep_noperturb (v3, if sol_bug_deep.cpp exists; trace-cmp too).  Also smoke, pool_bench(_tsan), fuzzer(_tsan), part2, tests/* (tape_test_<group>:
   core/tests/tape_test.cpp around one real generator, no runtime).
 build/tape/<name>/: gen, gen_alt linked with build/tape_file_runtime.o (file-based tape sessions, for the Step S
 shrinker in tools/shrink.py; no fork server).
@@ -55,8 +55,9 @@ def problem_targets(p):
     deep = d / "sol_bug_deep.cpp"  # v3 deep bug (core/deep_bug.hpp), only where it exists
     if deep.exists():
         dfl = [*fl, "-I", str(CORE)]
-        jobs.append((out / "fast_bug_deep", ["g++", *dfl, *COV_CMP, "-o", str(out / "fast_bug_deep"), str(deep), str(RUNTIME)],
-                     [deep, *problems.header_deps(deep, dfl), RUNTIME]))
+        for name, extra in (("fast_bug_deep", []), ("fast_bug_deep_noperturb", ["-DCF_NO_PERTURB"])):
+            jobs.append((out / name, ["g++", *dfl, *extra, *COV_CMP, "-o", str(out / name), str(deep), str(RUNTIME)],
+                         [deep, *problems.header_deps(deep, dfl), RUNTIME]))
     tape = BUILD / "tape" / p["name"]  # build/tape/: generators with the file-based tape runtime
     jobs += [(tape / name, ["g++", *fl, "-o", str(tape / name), str(src), str(TAPE_RT)], [*hdr(src), TAPE_RT])
              for name, src in srcs.items() if name in ("gen", "gen_alt")]

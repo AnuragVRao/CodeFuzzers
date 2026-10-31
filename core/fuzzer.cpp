@@ -50,7 +50,8 @@ struct Config {
     std::string op_log;              // write one line per child with its applied operators here
     int max_size = 200, variants = 1, workers = 1, timeout_ms = 2000, extra_ops = 0;
     int tape_span = 0, tape_capture = 0;  // span ablation (tape recipes); empty-tape capture (random strategy)
-    int value_profile = 0;  // v3: fast's coverage memfd also holds the trace-cmp value-profile map (admission on either)
+    int value_profile = 0, splice = 0;  // splice: v3 cross-worker splice operator (tape recipes)
+    long long pool_cap = pool_impl::MAX_ENTRIES;  // entries per pool instance (v3: the shared pool gets 8 x 4096)  // v3: fast's coverage memfd also holds the trace-cmp value-profile map (admission on either)
     long long arena_mb = 1024;  // tape arena size (--recipes tape only; no arena is created otherwise)
     long long tests = 1000, seed = 1;
     double time_limit = 60, write_frac = 0;
@@ -62,6 +63,9 @@ struct alignas(64) Stats {
     long long ref_fail = 0, checker_error = 0;
     long long dup_skip = 0, budget = 0, overflow = 0, mutated = 0, mut_changed = 0;  // tape sessions
     long long op_applied[OPS] = {}, op_children[OPS] = {}, op_changed[OPS] = {};      // per operator
+    // v3 (tape recipes): children with a parent from another worker; splice fallbacks; admitted children (with a
+    // foreign parent); admitted splice children (with a foreign donor)
+    long long children_foreign = 0, splice_fallback = 0, adm_children = 0, adm_foreign = 0, adm_splice = 0, adm_splice_foreign = 0;
     std::atomic<long long> executed{0};  // tests that ran ref; summed by record_bug() (other threads)
     Clock::time_point end;
 };
@@ -73,6 +77,7 @@ struct FirstBug {
     int worker = 0, variant = 0, size = 0;
     uint64_t seed = 0;
     std::string kind;
+    int parent_origin = -1, donor_origin = -1;  // v3: admitting worker of the bug's parent / splice donor (-1: none)
 };
 
 struct FirstNote {  // first ref_fail / checker_error: recorded for inspection, never stops a run
@@ -138,13 +143,14 @@ static void to_classes(const uint8_t* raw, uint8_t* cls, size_t len) {
 
 // tape: the generator's input tape (--recipes tape), saved as tape.bin (raw uint64 words).
 template <class E>
-static void record_bug(int w, const E& r, const std::string& kind, const std::string& input, const std::vector<uint64_t>* tape) {
+static void record_bug(int w, const E& r, const std::string& kind, const std::string& input, const std::vector<uint64_t>* tape,
+                       int parent_origin = -1, int donor_origin = -1) {
     std::lock_guard<std::mutex> g(bug_m);
     if (first_bug.found) return;
     long long executed = 0;
     for (int i = 0; i < cfg.workers; i++) executed += stats[i].executed.load(std::memory_order_relaxed);
     first_bug = {true, std::chrono::duration<double>(Clock::now() - t0).count(), completed.load(), executed, w,
-                 r.variant, r.size, r.seed, kind};
+                 r.variant, r.size, r.seed, kind, parent_origin, donor_origin};
     mkdir(cfg.bug_dir.c_str(), 0755);
     std::ifstream src(input, std::ios::binary);
     std::ofstream(cfg.bug_dir + "/input.txt", std::ios::binary) << src.rdbuf();
@@ -223,7 +229,8 @@ template <class E> static void worker(int w, std::vector<int> cpus) {
     std::vector<OpRec> recs;  // --op-log: this child's applied operators
     const bool oplog = !cfg.op_log.empty();
     MutCfg mc;  // the mutator's settings (core/mutate.hpp)
-    mc.byte = cfg.tape_mut == "byte", mc.span = cfg.tape_span, mc.max_size = cfg.max_size;
+    mc.byte = cfg.tape_mut == "byte", mc.span = cfg.tape_span, mc.splice = cfg.splice, mc.max_size = cfg.max_size;
+    int parent_origin = -1, donor_origin = -1;  // v3: origins of this child's parent and splice donor (-1: none)
     auto dead = [&](const Server::Result& r) {
         if (r.kind != Server::Result::SERVER_DEAD) return false;
         fprintf(stderr, "worker %d: server died\n", w), failed = stop_flag = true;
@@ -245,12 +252,28 @@ template <class E> static void worker(int w, std::vector<int> cpus) {
         bool use = pool && std::bernoulli_distribution(0.9)(rng) && pool->pick(rng, picked);
         unsigned ops = 0;
         recs.clear();
+        parent_origin = donor_origin = -1;
         if constexpr (TAPE) {
             tape.clear();
             if (use) {  // child: the parent's variant and tape, mutated
                 r = picked;
+                parent_origin = picked.origin;
+                st.children_foreign += picked.origin != w;
                 tape.assign(arena->words(picked.tape), arena->words(picked.tape) + picked.tape.words);
-                ops = mutate(tape, arena->draws(picked.tape), picked.tape.draws, r.size, rng, mc, st.op_applied, oplog ? &recs : nullptr);
+                DonorFn donor = [&](Donor& d) {  // v3 splice: a same-variant entry from this worker's pool (4 retries)
+                    for (int i = 0; i < 5; i++) {
+                        E e{};
+                        if (!pool->pick(rng, e)) return false;
+                        if (e.variant != r.variant) continue;
+                        d = {arena->words(e.tape), e.tape.words, arena->draws(e.tape), e.tape.draws};
+                        donor_origin = e.origin;
+                        return true;
+                    }
+                    return false;
+                };
+                ops = mutate(tape, arena->draws(picked.tape), picked.tape.draws, r.size, rng, mc, st.op_applied, oplog ? &recs : nullptr,
+                             &donor, &st.splice_fallback);
+                if (!(ops >> SPLICE & 1)) donor_origin = -1;  // a donor was looked at but the splice fell back
             } else {
                 random_recipe(r);
             }
@@ -264,6 +287,7 @@ template <class E> static void worker(int w, std::vector<int> cpus) {
             random_recipe(r);
         }
         r.seed = rng() >> 1, r.hits = 0;
+        if constexpr (TAPE) r.origin = uint8_t(w);
         st.tests++, st.size_sum += r.size;
         std::string kind;
         Server::Result g;  // b
@@ -327,6 +351,10 @@ template <class E> static void worker(int w, std::vector<int> cpus) {
                             arena->store(tr.out, uint32_t(tr.out_len), tr.log, uint32_t(tr.log_len), hash, r.tape) &&
                             pool->report(cls.data(), r)) {
                             st.news++;
+                            if (use) {
+                                st.adm_children++, st.adm_foreign += parent_origin != w;
+                                if (donor_origin >= 0) st.adm_splice++, st.adm_splice_foreign += donor_origin != w;
+                            }
                             if (!cfg.dump_tapes.empty()) admitted[w].push_back(r);
                         }
                     } else if (pool->report(cls.data(), r)) {
@@ -341,7 +369,7 @@ template <class E> static void worker(int w, std::vector<int> cpus) {
             }
         }
         if (kind == "WA" || kind == "RE" || kind == "TLE") {  // g
-            record_bug(w, r, kind, in, TAPE ? &tape : nullptr);
+            record_bug(w, r, kind, in, TAPE ? &tape : nullptr, parent_origin, donor_origin);
             if (cfg.mode == "hunt") stop_flag = true;
         }
         if (kind == "ref_fail") record_note(first_ref_fail, w, r);
@@ -400,10 +428,14 @@ int main(int argc, char** argv) {
     }
     I("--max-size", cfg.max_size), I("--variants", cfg.variants), I("--workers", cfg.workers), I("--tests", cfg.tests);
     I("--seed", cfg.seed), I("--extra-ops", cfg.extra_ops), I("--timeout-ms", cfg.timeout_ms), I("--arena-mb", cfg.arena_mb);
-    I("--tape-span", cfg.tape_span), I("--tape-capture", cfg.tape_capture), I("--value-profile", cfg.value_profile);
+    I("--tape-span", cfg.tape_span), I("--tape-capture", cfg.tape_capture), I("--value-profile", cfg.value_profile), I("--splice", cfg.splice);
+    I("--pool-cap", cfg.pool_cap);
     D("--time-limit", cfg.time_limit), D("--write-frac", cfg.write_frac);
     const bool tape = cfg.recipes == "tape";
-    if (cfg.fast != "sol" && cfg.fast != "bug" && cfg.fast != "bug_deep") { fprintf(stderr, "--fast sol|bug|bug_deep\n"); return 2; }
+    if (cfg.fast != "sol" && cfg.fast != "bug" && cfg.fast != "bug_deep" && cfg.fast != "bug_deep_noperturb") {
+        fprintf(stderr, "--fast sol|bug|bug_deep|bug_deep_noperturb\n");
+        return 2;
+    }
     if (cfg.size_dist != "uniform" && cfg.size_dist != "log") { fprintf(stderr, "--size-dist uniform|log\n"); return 2; }
     if (cfg.recipes != "guided" && cfg.recipes != "random" && !tape) { fprintf(stderr, "--recipes guided|random|tape\n"); return 2; }
     if (cfg.strategy != "random" && !make_pool(cfg.strategy)) { fprintf(stderr, "unknown strategy %s\n", cfg.strategy.c_str()); return 2; }
@@ -413,12 +445,12 @@ int main(int argc, char** argv) {
         return 2;
     }
     if (cfg.tape_mut != "draw" && cfg.tape_mut != "byte") { fprintf(stderr, "--tape-mut draw|byte\n"); return 2; }
-    if (!tape && (cfg.tape_span || cfg.tape_mut != "draw" || !cfg.dump_tapes.empty())) {
-        fprintf(stderr, "--tape-span, --tape-mut and --dump-tapes need --recipes tape\n");
+    if (!tape && (cfg.tape_span || cfg.splice || cfg.tape_mut != "draw" || !cfg.dump_tapes.empty())) {
+        fprintf(stderr, "--tape-span, --tape-mut, --dump-tapes and --splice need --recipes tape\n");
         return 2;
     }
-    if (cfg.value_profile && (cfg.strategy == "sharded" || cfg.strategy == "snapshot")) {
-        fprintf(stderr, "--value-profile supports --strategy random, noshare, rwlock, global\n");
+    if ((cfg.value_profile || cfg.pool_cap != long(pool_impl::MAX_ENTRIES)) && (cfg.strategy == "sharded" || cfg.strategy == "snapshot")) {
+        fprintf(stderr, "--value-profile and --pool-cap support --strategy random, noshare, rwlock, global\n");
         return 2;
     }
     map_len = cfg.value_profile ? 2 * pool_impl::MAP_SIZE : pool_impl::MAP_SIZE;
@@ -431,9 +463,9 @@ int main(int argc, char** argv) {
     int n_pools = cfg.strategy == "noshare" ? cfg.workers : 1;
     if (cfg.strategy == "random") seen.assign(cfg.workers, std::vector<uint8_t>(map_len, 0));
     else if (tape)
-        for (int i = 0; i < n_pools; i++) tape_pools.push_back(make_pool<TapeEntry>(cfg.strategy, map_len));
+        for (int i = 0; i < n_pools; i++) tape_pools.push_back(make_pool<TapeEntry>(cfg.strategy, map_len, size_t(cfg.pool_cap)));
     else
-        for (int i = 0; i < n_pools; i++) pools.push_back(make_pool(cfg.strategy, map_len));
+        for (int i = 0; i < n_pools; i++) pools.push_back(make_pool(cfg.strategy, map_len, size_t(cfg.pool_cap)));
     if (tape) {
         arena = std::make_unique<Arena>(size_t(cfg.arena_mb) << 20);
         if (!arena->capacity()) { fprintf(stderr, "could not reserve a %lld MiB arena\n", cfg.arena_mb); return 1; }
@@ -463,6 +495,8 @@ int main(int argc, char** argv) {
         tot.ref_fail += s.ref_fail, tot.checker_error += s.checker_error;
         tot.dup_skip += s.dup_skip, tot.budget += s.budget, tot.overflow += s.overflow;
         tot.mutated += s.mutated, tot.mut_changed += s.mut_changed;
+        tot.children_foreign += s.children_foreign, tot.splice_fallback += s.splice_fallback, tot.adm_children += s.adm_children;
+        tot.adm_foreign += s.adm_foreign, tot.adm_splice += s.adm_splice, tot.adm_splice_foreign += s.adm_splice_foreign;
         for (int op = 0; op < OPS; op++)
             tot.op_applied[op] += s.op_applied[op], tot.op_children[op] += s.op_children[op], tot.op_changed[op] += s.op_changed[op];
         executed += s.executed.load();
@@ -495,11 +529,11 @@ int main(int argc, char** argv) {
                "\"fast\": \"%s\", \"mode\": \"%s\", \"strategy\": \"%s\", \"workers\": %d, \"tests\": %lld, "
                "\"time_limit\": %g, \"seed\": %lld, \"extra_ops\": %d, \"write_frac\": %g, \"cpus\": \"%s\", "
                "\"timeout_ms\": %d, \"recipes\": \"%s\", \"out\": \"%s\", \"bug_dir\": \"%s\", \"gen_template\": \"%s\", \"size_dist\": \"%s\", "
-               "\"arena_mb\": %lld, \"tape_mut\": \"%s\", \"tape_span\": %d, \"tape_capture\": %d, \"op_log\": \"%s\", \"value_profile\": %d},\n",
+               "\"arena_mb\": %lld, \"tape_mut\": \"%s\", \"tape_span\": %d, \"tape_capture\": %d, \"op_log\": \"%s\", \"value_profile\": %d, \"splice\": %d, \"pool_cap\": %lld},\n",
             esc(cfg.build).c_str(), cfg.checker.c_str(), cfg.max_size, cfg.variants, cfg.fast.c_str(), cfg.mode.c_str(),
             cfg.strategy.c_str(), cfg.workers, cfg.tests, cfg.time_limit, cfg.seed, cfg.extra_ops, cfg.write_frac,
             cfg.cpus.c_str(), cfg.timeout_ms, cfg.recipes.c_str(), esc(cfg.out).c_str(), esc(cfg.bug_dir).c_str(), esc(cfg.gen_template).c_str(),
-            cfg.size_dist.c_str(), cfg.arena_mb, cfg.tape_mut.c_str(), cfg.tape_span, cfg.tape_capture, esc(cfg.op_log).c_str(), cfg.value_profile);
+            cfg.size_dist.c_str(), cfg.arena_mb, cfg.tape_mut.c_str(), cfg.tape_span, cfg.tape_capture, esc(cfg.op_log).c_str(), cfg.value_profile, cfg.splice, cfg.pool_cap);
     fprintf(f, "  \"wall_s\": %.4f, \"tests\": %lld, \"tests_per_sec\": %.1f, \"mean_size\": %.2f,\n", wall,
             tot.tests, tot.tests / wall, tot.tests ? double(tot.size_sum) / tot.tests : 0.0);
     fprintf(f, "  \"outcomes\": {\"ok\": %lld, \"WA\": %lld, \"RE\": %lld, \"TLE\": %lld, \"invalid\": %lld, \"gen_skip\": %lld, "
@@ -516,6 +550,9 @@ int main(int argc, char** argv) {
                 tot.op_applied[op], tot.op_children[op], tot.op_changed[op]);
     fprintf(f, "},\n  \"arena_bytes\": %zu, \"arena_full\": %llu,\n", arena ? arena->bytes() : 0,
             (unsigned long long)(arena ? arena->arena_full() : 0));  // peak (the arena is append-only)
+    fprintf(f, "  \"children_foreign\": %lld, \"splice_fallback\": %lld, \"adm_children\": %lld, \"adm_foreign\": %lld, "
+               "\"adm_splice\": %lld, \"adm_splice_foreign\": %lld,\n",
+            tot.children_foreign, tot.splice_fallback, tot.adm_children, tot.adm_foreign, tot.adm_splice, tot.adm_splice_foreign);
     fprintf(f, "  \"new_cov_reports\": %lld, \"cov_features\": %d, \"vp_features\": %d, \"pool_entries\": %zu,\n  \"per_worker_tests\": [",
             tot.news, cov_features, vp_features, entries);
     for (int w = 0; w < cfg.workers; w++) fprintf(f, "%s%lld", w ? ", " : "", stats[w].tests);
@@ -523,9 +560,9 @@ int main(int argc, char** argv) {
     if (!first_bug.found) fprintf(f, "null");
     else
         fprintf(f, "{\"time_s\": %.4f, \"tests_before\": %lld, \"executed_before\": %lld, \"worker\": %d, \"kind\": \"%s\", "
-                   "\"variant\": %d, \"size\": %d, \"seed\": %llu}",
+                   "\"variant\": %d, \"size\": %d, \"seed\": %llu, \"parent_origin\": %d, \"donor_origin\": %d}",
                 first_bug.time_s, first_bug.tests_before, first_bug.executed_before, first_bug.worker, first_bug.kind.c_str(),
-                first_bug.variant, first_bug.size, (unsigned long long)first_bug.seed);
+                first_bug.variant, first_bug.size, (unsigned long long)first_bug.seed, first_bug.parent_origin, first_bug.donor_origin);
     for (auto [name, n] : {std::pair<const char*, FirstNote*>{"first_ref_fail", &first_ref_fail}, {"first_checker_error", &first_checker_error}}) {
         fprintf(f, ",\n  \"%s\": ", name);
         if (!n->found) fprintf(f, "null");

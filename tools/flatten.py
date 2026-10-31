@@ -23,6 +23,8 @@ TAPE_METRICS = ["generated", "executed", "dup_skip", "gen_budget_exceeded", "tap
 
 
 def arm(c):
+    if c.get("recipes") == "tape" and c.get("value_profile") and c.get("splice"):  # v3 arms (docs/v3_roadmap.md)
+        return f"vp-{c['strategy']}"
     if c.get("recipes") == "tape":
         return f"tape-{c['strategy']}" + ("-span" if c.get("tape_span") else "") + ("-byte" if c.get("tape_mut") == "byte" else "")
     return "random-capture" if c.get("tape_capture") else c["strategy"]

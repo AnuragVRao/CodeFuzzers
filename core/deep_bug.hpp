@@ -5,67 +5,85 @@
 // stdout at exit, so the perturbation works however and whenever the solution prints.
 // The file defines CF_C1, CF_C2, CF_M, CF_C3 (written by tools/deep_calib.py, never by hand) before including.
 // -DCF_GUARD_LOG: guard() prints "g1 g2 g3" to stderr and exits 0 (tools/deep_calib.py only).
+// -DCF_NO_PERTURB (fast_bug_deep_noperturb, V3 pre-pilot smoke runs only): the guard comparisons are kept and
+// instrumented, the innermost body writes a volatile sink instead, the output is never changed, nothing is logged.
+// Only guard() is instrumented: the capture/rewrite helpers are no_sanitize_coverage (and use no std::string, whose
+// template code would be instrumented), so they add no edge or value-profile features.
 #pragma once
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <iostream>
-#include <string>
 #include <sys/mman.h>
 #include <unistd.h>
+
+#define CF_NOCOV __attribute__((no_sanitize_coverage, noinline))
 
 namespace cf_deep {
 inline int real_fd = -1, mem_fd = -1;
 inline bool fired = false;
+inline volatile int sink = 0;
 
-inline std::string inc(const std::string& t) {  // decimal integer token + 1
-    if (t[0] == '-') {  // -k + 1 = -(k - 1)
-        std::string k = t.substr(1);
-        int i = int(k.size()) - 1;
-        while (k[i] == '0') k[i--] = '9';
-        k[i]--;
-        size_t nz = k.find_first_not_of('0');
-        return nz == std::string::npos ? "0" : "-" + k.substr(nz);
+CF_NOCOV inline void write_all(const char* p, size_t n) {
+    while (n > 0) {
+        ssize_t k = write(real_fd, p, n);
+        if (k <= 0) return;
+        p += k, n -= size_t(k);
     }
-    std::string k = t;
-    int i = int(k.size()) - 1;
-    while (i >= 0 && k[i] == '9') k[i--] = '0';
-    return i < 0 ? "1" + k : (k[i]++, k);
 }
 
-inline void perturb(std::string& s) {
-    for (size_t i = 0; i < s.size();) {
-        while (i < s.size() && isspace((unsigned char)s[i])) i++;
+// Writes buf[0, n) to the real stdout with the first integer token increased by 1 (or " 0" appended to line 1).
+CF_NOCOV inline void write_perturbed(const char* s, size_t n) {
+    for (size_t i = 0; i < n;) {
+        while (i < n && isspace((unsigned char)s[i])) i++;
         size_t j = i;
-        while (j < s.size() && !isspace((unsigned char)s[j])) j++;
+        while (j < n && !isspace((unsigned char)s[j])) j++;
         if (j == i) break;
-        std::string t = s.substr(i, j - i);
-        size_t d = t[0] == '-' ? 1 : 0;
-        if (t.size() > d && t.find_first_not_of("0123456789", d) == std::string::npos) {
-            s.replace(i, j - i, inc(t));
+        size_t d = s[i] == '-' ? i + 1 : i, k = d;
+        while (k < j && s[k] >= '0' && s[k] <= '9') k++;
+        if (k == j && j > d) {  // integer token s[i, j)
+            char* t = (char*)malloc(j - i + 2);  // room for one more digit
+            size_t len = j - d;
+            memcpy(t + 1, s + d, len);
+            char* x = t + 1;
+            if (s[i] != '-') {  // x + 1
+                long long q = (long long)len - 1;
+                while (q >= 0 && x[q] == '9') x[q--] = '0';
+                if (q < 0) *--x = '1', len++;
+                else x[q]++;
+            } else {  // -x + 1 = -(x - 1)
+                long long q = (long long)len - 1;
+                while (x[q] == '0') x[q--] = '9';
+                x[q]--;
+                while (len > 1 && *x == '0') x++, len--;
+                if (!(len == 1 && *x == '0')) *--x = '-', len++;
+            }
+            write_all(s, i), write_all(x, len), write_all(s + j, n - j);
+            free(t);
             return;
         }
         i = j;
     }
-    size_t nl = s.find('\n');
-    s.insert(nl == std::string::npos ? s.size() : nl, " 0");
+    const char* nl = (const char*)memchr(s, '\n', n);
+    size_t cut = nl ? size_t(nl - s) : n;
+    write_all(s, cut), write_all(" 0", 2), write_all(s + cut, n - cut);
 }
 
-inline void finish() {
+CF_NOCOV inline void finish() {
     fflush(stdout);
     std::cout.flush();
-    std::string s;
-    char buf[1 << 16];
+    size_t n = size_t(lseek(mem_fd, 0, SEEK_END));
+    char* s = (char*)malloc(n + 1);
+    size_t got = 0;
     lseek(mem_fd, 0, SEEK_SET);
-    for (ssize_t k; (k = read(mem_fd, buf, sizeof buf)) > 0;) s.append(buf, size_t(k));
-    if (fired) perturb(s);
-    for (size_t off = 0; off < s.size();) {
-        ssize_t k = write(real_fd, s.data() + off, s.size() - off);
-        if (k <= 0) break;
-        off += size_t(k);
-    }
+    for (ssize_t k; got < n && (k = read(mem_fd, s + got, n - got)) > 0;) got += size_t(k);
+    if (fired) write_perturbed(s, got);
+    else write_all(s, got);
+    free(s);
 }
 
-inline void begin() {
+CF_NOCOV inline void begin() {
     real_fd = dup(1);
     mem_fd = memfd_create("cf_deep_out", 0);
     if (real_fd < 0 || mem_fd < 0 || dup2(mem_fd, 1) < 0) abort();
@@ -81,7 +99,13 @@ inline void guard(long long g1, long long g2, long long g3) {
     long long r = (g3 % CF_M + CF_M) % CF_M;
     if (g1 >= CF_C1) {
         if (g2 >= CF_C2) {
-            if (r == CF_C3) fired = true;
+            if (r == CF_C3) {
+#ifdef CF_NO_PERTURB
+                sink = 1;
+#else
+                fired = true;
+#endif
+            }
         }
     }
 }
