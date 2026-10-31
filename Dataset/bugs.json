@@ -131,13 +131,14 @@
     "category": "off-by-one",
     "description": "Fenwick add stops at i < n and never updates the last node.",
     "line": 79,
-    "trigger": "A value with more than 64 occurrence slots (several blocks) whose full-prefix count is queried.",
+    "trigger": "A value whose occurrence-slot count is an exact multiple of 64 (64, 128, ...), with a query whose right end reaches past its last slot; the count then reads the never-updated last Fenwick node. 63, 65, 127 and 129 slots do not trigger.",
     "rate": {
       "5": 0.0,
       "20": 0.0,
       "max": 0.6
     },
-    "tier": "hard"
+    "tier": "hard",
+    "trigger_note": "Verified 2026-10-31 by the Step S floor tests (docs/shrink_plan.md): 64 and 128 copies (full query) and 64 copies queried over [1, 64) give WA; 63, 65, 127 and 129 copies and 64 copies over [0, 63) do not. Replaces the earlier text \"more than 64 occurrence slots\"."
   },
   {
     "problem": "rectangle_sum",
