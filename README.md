@@ -16,6 +16,9 @@ The project asks three questions:
 - **Steerable recipes:** if every random draw of the generator is recorded (a "tape") and single draws are mutated,
   are bugs found in fewer tests, and can the same tapes shrink failing inputs further? See
   [Tape recipes and the shrinker](#tape-recipes-and-the-shrinker).
+- **Sharing mechanics (v3):** on bugs deep enough to need many tests, with a value signal (comparison-operand
+  feedback) and an operator that can combine two workers' finds, does a shared pool find the bug in fewer tests than
+  private pools? See [Deep bugs and shared guidance](#deep-bugs-and-shared-guidance-v3).
 
 ## Pipeline
 
@@ -39,19 +42,23 @@ The project asks three questions:
 
 ```
 Dataset/            30 problems (arrays, graphs, strings): generators, brute, sol, sol_bug, checker,
-                    verifier, params.h; manifest.json; bugs.json (planted bugs, measured rates)
+                    verifier, params.h; manifest.json; bugs.json (planted bugs, measured rates);
+                    v3: sol_bug_deep.cpp on 3 problems, bugs_deep.json (constants, calibration)
 core/               C++17: fs_runtime.cpp (fork-server + coverage runtime), server.hpp (client),
                     pool.hpp (5 pool strategies), fuzzer.cpp, pool_bench.cpp, smoke.cpp, compare.hpp,
                     arena.hpp (tape arena), mutate.hpp (tape mutation), part2.cpp (mutation diagnostics),
-                    tape_file_runtime.cpp (file-based tape sessions for the shrinker)
+                    tape_file_runtime.cpp (file-based tape sessions for the shrinker),
+                    deep_bug.hpp (v3 deep-bug guard + output perturbation)
 core/tests/         fork-server, checker and tape tests; golden_gen.json (golden generator hashes)
 tools/              Python: build, run, flatten, aggregate, plots, results_table, sanity, tier_bugs,
                     shrink, shrink_scaling, bug_gallery, repro, llm, problems, style, golden_gen, part2,
                     fp_sim, pilot_report, pilot_posthoc, shrink_run, shrink_test, shrink_report(_s2),
-                    shrink_replay_check, posthoc_misc; analysis website (server, analyze, e2e_test.sh);
+                    shrink_replay_check, posthoc_misc, deep_calib, v3_report; analysis website (server,
+                    analyze, e2e_test.sh);
                     selftest.sh
-docs/               roadmap, tape design, pre-registered pilot plan, frozen shrinker plans, results
-                    (v2_results.md, append-only), v2_key_numbers.md (where every headline number comes from)
+docs/               roadmaps (v2, v3), tape design, pre-registered pilot plan, frozen shrinker plans, results
+                    (v2_results.md, v3_results.md, append-only), v2_key_numbers.md (where every headline
+                    number comes from)
 dashboard/          Vite + React + Recharts; reads results/summary.json (no backend)
 fuzz_config.json    max input size per problem
 requirements.txt    Python packages (numpy, scipy, matplotlib)
@@ -132,6 +139,14 @@ python3 tools/shrink_run.py --set eval --shrinker old --jobs 16                 
 python3 tools/shrink_report_s2.py && python3 tools/shrink_replay_check.py && python3 tools/posthoc_misc.py
 ```
 
+Deep bugs and shared guidance (v3; the deep-bug constants are already committed, so recalibration is optional):
+
+```bash
+python3 tools/deep_calib.py range_add_range_min        # optional: constants + calibration, ~1.5 min per problem
+python3 tools/run.py --exp v3 --preset full            # 900 runs, ~45 min
+python3 tools/v3_report.py                             # H1 tables -> results/v3/summary.json
+```
+
 `run.py --dry-run` prints the plan and an ETA. Runs are resumable: finished result files are
 skipped. The confirmatory problems are the constant `FOCUS_PROBLEMS` in `tools/run.py`, fixed before
 data collection; each hunt-focus run records them in `results/raw/hunt-focus/focus.json`.
@@ -140,7 +155,7 @@ data collection; each hunt-focus run records them in `results/raw/hunt-focus/foc
 
 Machine: i7-13650HX laptop, WSL2. Table printed by `python3 tools/results_table.py`; runs from
 commits `078b143` (scale, pinning, hunt-focus) and `672be82` (exploratory hunt; the only later code
-change is the run order in `run.py`).
+change is the run order in `run.py`); the v3 rows from commit `022da45` (`results/v3/summary.json`).
 
 | Result | Value |
 |---|---|
@@ -162,19 +177,29 @@ change is the run order in `run.py`).
 | Confirmatory hunt, range_linear_add_range_min: rwlock / noshare median tests-to-bug (8 workers, n=100) | 1.10 [95% CI 0.73–1.93], p_Holm = 1.00 |
 | Exploratory hunt comparisons with p_Holm < 0.05 | 0 of 66 |
 | Minimum detectable median ratio (Mann–Whitney, 80% power) | n=30: 2.5×, n=100: 1.6× |
+| v3 deep bug, range_add_range_min: vp-rwlock / vp-noshare median tests-to-bug (8 workers, n=100) | 0.49 [95% CI 0.37–0.63], one-sided p_Holm = 1.6e-10 |
+| v3 deep bug, range_affine_range_sum: vp-rwlock / vp-noshare median tests-to-bug (8 workers, n=100) | 0.63 [95% CI 0.48–0.87], one-sided p_Holm = 4.7e-04 |
+| v3 deep bug, range_set_range_composite: vp-rwlock / vp-noshare median tests-to-bug (8 workers, n=100) | 0.60 [95% CI 0.45–0.83], one-sided p_Holm = 8.7e-06 |
+| v3 vp-rwlock: share of children with a parent from another worker (chance 7/8) | 0.874 – 0.875 |
+| v3 vp-noshare / random-capture median tests-to-bug (descriptive) | 0.34 – 0.46 |
 | Generator-size shrinker (gallery bugs): median bytes kept / bugs re-validated | 19% / 30 of 30 |
 | Generator-size shrinker speed-up at 20 worker processes (median over 3 problems) | 9.1× |
 | LLM qwen2.5-coder:7b: bug line within ±3 (chance) / category (majority baseline) | 4/29 (7%, p = 0.133) / 9/29 (boundary / init 24%, p = 0.25) |
 | LLM qwen2.5-coder:7b: generators compiled (first try + after repair) / mean verifier acceptance | 3 + 5 of 11 / 69% |
 | LLM qwen3:8b: bug line within ±3 (chance) / category (majority baseline) | 7/29 (7%, p = 0.002) / 9/29 (boundary / init 24%, p = 0.25) |
 
-In short: with a realistic workload (K=0, one pool read and write per test) sharing the pool costs
-nothing measurable, whatever the strategy. Extra pool traffic separates the strategies: copy-on-write
-snapshots collapse under write-heavy traffic exactly as the pool-only benchmark predicts, while the
-mutex-based strategies stay close to noshare. The hunt experiments found no difference between
-random, privately guided and shared-guided fuzzing; the tests could only have detected differences of
-about 1.6× or more, and the planted bugs are found within a few hundred tests, before guidance has much
-to work with. Steering the generator's draws (tape recipes) made bug finding slower, not faster, but the same tapes
+In short: at K=0 (one pool pick and one report per test, the traffic a real run generates) every sharing strategy
+stayed within ±5% of noshare, the run-to-run noise band. That is expected: a test costs about a millisecond per
+worker (three process runs through the fork-server) while a pool operation takes microseconds, so the pool is a tiny
+part of the work. Extra pool traffic separates the strategies: copy-on-write snapshots collapse under write-heavy
+traffic exactly as the pool-only benchmark predicts, while the mutex-based strategies stay close to noshare. On the
+original planted bugs the hunt experiments found no difference between random, privately guided and shared-guided
+fuzzing; the tests could only have detected differences of about 1.6× or more, and those bugs are found within a few
+hundred tests, before guidance has much to work with. On deeper, synthetic bugs (v3: a chain of three comparisons,
+about 40,000 random tests to find), with comparison-operand feedback and a splice operator that combines two pool
+entries, a shared pool needed 0.49–0.63× the tests of private pools on all three problems (pre-registered, one-sided
+p_Holm ≤ 5e-4); about 85–90% of the bug-finding tests descended from another worker's pool entry. This shows that
+sharing helps on that bug class, not on typical competitive-programming bugs. Steering the generator's draws (tape recipes) made bug finding slower, not faster, but the same tapes
 give a shrinker that reduces failing inputs far more than shrinking the generator size (on two of the three focus
 problems; on the third both reach the smallest known input). Only qwen3:8b located bugs better than chance.
 
@@ -232,6 +257,42 @@ iteration by rule.
 To shrink one bug: `python3 tools/shrink.py <problem> <bug-dir> --out <dir>` (tape shrinker);
 `python3 tools/shrink.py --old <problem> <bug-dir>` (generator-size shrinker).
 
+## Deep bugs and shared guidance (v3)
+
+This part followed a short pre-registered plan (`docs/v3_roadmap.md`; design frozen at `b518f21`, analysis committed
+at `022da45` before the counted runs). Full tables: `docs/v3_results.md`.
+
+**Why.** The v1/v2 null results have three causes: the planted bugs are found in a few hundred tests, coverage carries
+no value signal, and a pool entry carries little information. v3 changes exactly these three things.
+
+- **Deep bugs.** On 3 problems, `sol_bug_deep.cpp` is `sol.cpp` plus one guarded perturbation
+  (`core/deep_bug.hpp`): `if (n >= C1) { if (a[0] >= C2) { if (sum(a) mod 38 == C3) <first output integer + 1> } }`.
+  The constants are set by sampling 2,000 inputs (`tools/deep_calib.py`, target pass rate 0.026 per guard), never by
+  hand; random fuzzing needs a median of 27,000–60,000 tests to find them (calibration, 10 runs each).
+- **Value profile.** Only the deep-bug binaries are built with `-fsanitize-coverage=trace-cmp`; each compare adds a
+  feature (compare PC, log2 of the operand distance), and `--value-profile 1` admits a test that reaches a new one.
+  Cost: 0.92–0.93× tests/s.
+- **Splice.** `--splice 1` adds an operator that joins the first k draws of the parent's tape with the rest of a
+  second pool entry's tape. With a shared pool the donor usually comes from another worker; with private pools it
+  never does. The shared pool holds 8 × 4,096 entries, the same total as 8 private pools.
+
+**Experiment.** vp-noshare vs vp-rwlock (value profile + splice; private vs shared pool), random-capture as a
+reference; 3 problems, 8 workers, 100 runs per arm, 120 s limit.
+
+| Median tests-to-bug | range_add_range_min | range_affine_range_sum | range_set_range_composite |
+|---|---:|---:|---:|
+| random-capture (reference) | 36,546 | 43,590 | 42,995 |
+| vp-noshare (private pools) | 15,778 | 15,002 | 19,941 |
+| vp-rwlock (shared pool) | 7,774 | 9,452 | 12,016 |
+| vp-rwlock / vp-noshare [95% CI] | 0.49 [0.37, 0.63] | 0.63 [0.48, 0.87] | 0.60 [0.45, 0.83] |
+| one-sided Mann–Whitney, p_Holm | 1.6e-10 | 4.7e-4 | 8.7e-6 |
+
+**Verdict: H1 is supported** on all three problems. In vp-rwlock, 87.5% of children had a parent from another worker
+(chance 7/8), and 85–90 of each problem's 100 bug-finding tests did; 23–44 were splices with a donor from another
+worker. **Caveat:** these deep bugs are synthetic, guarded by comparison chains that value profiling is designed to
+exploit. The result shows that sharing helps on this bug class; it does not show that sharing helps on typical
+competitive-programming bugs (off-by-one, overflow, missed edge cases).
+
 ## Design decisions
 
 - **Fork-server** — starting a process per test costs more than the test itself; a pre-forked server costs one `fork()`.
@@ -248,6 +309,9 @@ To shrink one bug: `python3 tools/shrink.py <problem> <bug-dir> --out <dir>` (ta
 - **Censoring-aware medians** — a hunt without a bug counts as +∞, so medians are never biased by dropping slow runs.
 - **Holm correction** — 66 exploratory comparisons would produce false positives without it.
 - **Pre-declared confirmatory hunt** — the three problems were fixed by rule and committed before their data was collected.
+- **Deep-bug constants by sampling** — the guard constants come from the empirical pass rates of 2,000 sampled inputs and the bug set from a calibration rule on the random arm only, so no constant was tuned toward the guided arms.
+- **Equal total pool capacity** — the shared pool holds 8 × 4,096 entries, as many as the 8 private pools together, so "sharing" is not confused with "a bigger pool".
+- **Guard-only build for pre-experiment runs** — smoke runs used a build with the guard comparisons but no perturbation, so no tests-to-bug data on a deep bug existed before the v3 design was frozen.
 
 ## Website
 
@@ -320,10 +384,15 @@ with your user's permissions, so it binds to 127.0.0.1 only and must not be expo
 - **One build per comparison.** All scaling numbers come from one build (runs listed under *Key results*); throughput
   checks made after the tape code was added were regression gates and are not mixed into the scaling results.
 - **Shrinker floors.** The floors are the smallest failing inputs found by hand, not proven minima.
+- **Synthetic deep bugs (v3).** The deep bugs were written by an AI coding assistant (Claude Opus 5.5) from a fixed
+  template, with constants set by sampling, and they are comparison chains of exactly the kind value profiling
+  exploits. The calibration band was set for the random arm only; the guided arms found the bugs in fewer tests than
+  that band. v3 tests one sharing design (rwlock pool, value profile, splice) on 3 array problems.
 
 ## Limitations and future work
 
-- Larger inputs and bugs that need more than a few hundred tests, so that guidance can matter.
+- Deep bugs that are not synthetic comparison chains (v3 shows sharing helps on those), and larger inputs.
+- A v3 ablation (value profile without splice, splice without value profile) to separate the two mechanisms.
 - Real (historical) bugs from contest submissions instead of planted ones.
 - Bare-metal Linux measurements to remove the WSL2 virtualisation layer.
 - A lock-free pool (e.g. per-worker buffers merged in batches) as a sixth strategy.

@@ -49,13 +49,14 @@ v3 work follows docs/v3_roadmap.md. Read it before any v3 task.
     golden_gen.py   golden generator hashes (--check: runtime-linked and build/plain/ generators)
     checker_agree_test.py  C++ vs Python checker-outcome mapping
     deep_calib.py   v3 Step V1: deep-bug constants (sampling), trigger check, random-capture calibration
+    v3_report.py    v3 Step V4 frozen analysis (H1 tests, descriptive tables; --selftest on synthetic data)
     replay_first_bugs.py   replays v1 first bugs (Step 0.2 evidence -> results/derived/)
     analyze.py, server.py, e2e_test.sh   analysis server (upload, queue, SSE) and its end-to-end test
     part2.py        v2 Part 2 pipeline + mut_similarity; fp_sim.py  pilot false-PROCEED simulation
     part2_oplog.py  Part 2 op-log analysis; pilot_report.py  pilot criterion (b) report;
                     pilot_posthoc.py  post-hoc pilot analysis (root/child, bootstrap CIs, rate decomposition)
     shrink_report.py, shrink_report_s2.py   Step S / S2 EVAL reports (old, S1, S2 shrinkers)
-- docs/             v2_roadmap.md (v2 plan + status), v3_roadmap.md (v3 plan + status), tape_design.md (v2 spec as built), v2_pilot_plan.md
+- docs/             v2_roadmap.md (v2 plan + status), v3_roadmap.md (v3 plan + status), v3_results.md (v3 results, append-only), tape_design.md (v2 spec as built), v2_pilot_plan.md
                     (pre-registration), v2_results.md (append-only results) + v2_pilot_raw.sha256 (pilot raw-output
                     manifest), shrink_plan.md / shrink_plan_s2.md (frozen Step S / S2 plans), known_issues.md,
                     v1_data_archive.md + v1_archive.sha256, DEMO.md
@@ -65,7 +66,8 @@ v3 work follows docs/v3_roadmap.md. Read it before any v3 task.
                     build/tape/ = generators with tape_file_runtime.o (Step S shrinker)
 - results/          run outputs (gitignored): raw/<experiment>/ (v2: raw/pilot/), runs.csv, summary.json,
                     charts/, bugs/ (gallery), llm/ (answers + prompts), derived/ (Step 0.2 replay), part2/,
-                    shrink/<set>[_old]/ (Step S), deep_calib/<problem>/ (v3 V1)
+                    shrink/<set>[_old]/ (Step S), deep_calib/<problem>/ (v3 V1),
+                    raw/v3/ + v3/summary.json (v3 V4)
 - dashboard/        Vite + React + Recharts, reads results/summary.json, no backend;
                     Node 22 (.nvmrc) via nvm: `source ~/.nvm/nvm.sh` before npm
 

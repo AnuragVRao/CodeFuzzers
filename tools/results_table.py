@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Prints the README's key-results table (markdown) from results/summary.json, plus the commits
 the summarised runs came from, so the README numbers can always be regenerated and checked.
+v3 rows (deep bugs, docs/v3_roadmap.md) come from results/v3/summary.json (tools/v3_report.py) when it exists.
 Usage: python3 tools/results_table.py
 """
 import json
@@ -51,7 +52,21 @@ for model, d in s["llm"].items():
         add(f"LLM {model}: generators compiled (first try + after repair) / mean verifier acceptance",
             f"{gn['compiled_first_try']} + {gn['compiled_after_repair']} of {gn['n']} / {100 * gn['mean_acceptance']:.0f}%")
 
+v3_path = problems.ROOT / "results" / "v3" / "summary.json"
+v3 = json.loads(v3_path.read_text()) if v3_path.exists() else None
+if v3:
+    for t in v3["h1"]:
+        add(f"v3 deep bug, {t['problem']}: vp-rwlock / vp-noshare median tests-to-bug (8 workers, n=100)",
+            f"{t['ratio']:.2f} [95% CI {t['ci_lo']:.2f}–{t['ci_hi']:.2f}], one-sided p_Holm = {t['p_holm']:.1e}")
+    fp = [r["foreign_pick_share"] for r in v3["arms"] if r["arm"] == "vp-rwlock"]
+    add("v3 vp-rwlock: share of children with a parent from another worker (chance 7/8)", f"{min(fp):.3f} – {max(fp):.3f}")
+    rc = {r["problem"]: r["median"] for r in v3["arms"] if r["arm"] == "random-capture"}
+    vn = {r["problem"]: r["median"] for r in v3["arms"] if r["arm"] == "vp-noshare"}
+    add("v3 vp-noshare / random-capture median tests-to-bug (descriptive)", f"{min(vn[p] / rc[p] for p in rc):.2f} – {max(vn[p] / rc[p] for p in rc):.2f}")
+
 print("| Result | Value |\n|---|---|")
 for m, v in rows:
     print(f"| {m} | {v} |")
 print(f"\nGenerated from results/summary.json ({s['meta']['generated_at']}); runs from commits {', '.join(s['meta']['commits'])}.")
+if v3:
+    print(f"v3 rows from results/v3/summary.json; runs from commit {', '.join(v3['commits'])}.")

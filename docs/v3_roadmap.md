@@ -20,8 +20,8 @@ and forced-guard checks, secondary hypotheses) is cut.
 | V1 | Deep bugs on 3 problems | 2.5 h | done | 39e9f40 |
 | V2 | trace-cmp value profile | 2 h | done | 59755dd |
 | V3 | Cross-worker splice, origin, equal pool capacity, arms | 2 h | done (design frozen) | b518f21 |
-| V4 | The experiment (one pre-registered run set) | 2 h | done (H1 supported) | |
-| V5 | Report + README | 1 h | | |
+| V4 | The experiment (one pre-registered run set) | 2 h | done (H1 supported) | 9a1379d |
+| V5 | Report + README | 1 h | done | |
 
 ## Why
 v1 and v2 found no benefit from sharing the pool. There are three reasons:
