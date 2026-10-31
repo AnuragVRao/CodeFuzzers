@@ -6,7 +6,7 @@ Sets: dev  = the 27 non-focus gallery bugs (results/bugs/<problem>/);
 eval is shrunk once per distinct input (same problem, same input.txt sha256): the representative is the first bug
 in the fixed order; OUT/representatives.json maps every bug to its representative (per-bug metrics = multiplicity).
 Modes: --capture-only   stage 0 only (regenerated input hashes to input.txt), matched/total per population
-       --shrinker new   tools/shrink.py's v2 shrinker, --jobs bugs in parallel, into OUT/<bug id>/
+       --shrinker new   tools/shrink.py's v2 shrinker (S2; --s1: the S1 shrinker), --jobs bugs in parallel, into OUT/<bug id>/
        --shrinker old   tools/shrink.py --old on a copy of each bug directory (OUT/<bug id>/bug/), seed per bug =
                         int(sha256(bug id)[:8], 16); one bug at a time, its own process pool of --jobs workers
        --replay         cold start: re-judge every OUT/<bug id>/input.txt with fresh processes; it must give the
@@ -64,8 +64,8 @@ def capture_one(job):
 
 
 def new_one(args):
-    (bid, problem, pop, d), out, max_evals, wall = args
-    info = shrink.shrink_bug(problem, d, out / bid, max_evals, wall)
+    (bid, problem, pop, d), out, max_evals, wall, s1 = args
+    info = shrink.shrink_bug(problem, d, out / bid, max_evals, wall, s1)
     return dict(bug=bid, population=pop, **{k: v for k, v in info.items() if k != "bug_dir"})
 
 
@@ -94,6 +94,7 @@ def main():
     ap.add_argument("--out", type=Path)
     ap.add_argument("--max-evals", type=int, default=2000)
     ap.add_argument("--wall", type=float, default=60.0)
+    ap.add_argument("--s1", action="store_true", help="new shrinker: the S1 version (no count-aware stage)")
     a = ap.parse_args()
     bugs = bug_set(a.set)
     out = a.out or ROOT / "results" / "shrink" / (a.set + ("_old" if a.shrinker == "old" else ""))
@@ -127,7 +128,7 @@ def main():
     t0 = time.time()
     if a.shrinker == "new":
         with ProcessPoolExecutor(a.jobs) as ex:
-            rows = list(ex.map(new_one, [(b, out, a.max_evals, a.wall) for b in bugs]))
+            rows = list(ex.map(new_one, [(b, out, a.max_evals, a.wall, a.s1) for b in bugs]))
     else:
         rows = [old_one(*b, out, a.jobs) for b in bugs]
     out.mkdir(parents=True, exist_ok=True)

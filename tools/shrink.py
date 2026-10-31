@@ -134,6 +134,11 @@ def main():
 # draws, repeated until a pass accepts nothing. Stage 2: line-level then token-level (per line) ddmin on the text.
 # Deterministic (no randomness); every candidate costs one evaluation unless memoised. Best = fewest tokens, then
 # bytes, then earliest. A budget stop (evaluation cap, wall time) keeps the best so far.
+# S2 (default; --s1 runs the S1 shrinker above unchanged, docs/shrink_plan_s2.md): a count-aware pass (stage 3)
+# between the tape stage and the ddmin stage: delete k consecutive lines after the first (3a) or k consecutive tokens
+# of one such line (3b), each with the first line unchanged or with one of its integer tokens decremented by k
+# (never below 0); k halves from the largest power of two to 1. info.json gains stage_sizes (tokens, bytes at
+# every stage boundary) and shrinker "s2".
 
 TOKEN = re.compile(r"-?\d+|\S")
 TAPE_BUDGET, BUDGET_EXIT = 1_000_000, 85
@@ -235,8 +240,27 @@ def mask_of(upper):  # as in random.h next(upper)
     return upper if not (upper & (upper + 1)) else (1 << upper.bit_length()) - 1
 
 
+def s2_pieces(line):  # (whitespace before, token) for every token of a line
+    parts = [(m.start(), m.group()) for m in TOKEN.finditer(line)]
+    return [(line[(parts[i - 1][0] + len(parts[i - 1][1])) if i else 0:pos], tok) for i, (pos, tok) in enumerate(parts)]
+
+
+def s2_join(pieces):
+    return "".join(sep + tok for sep, tok in pieces).lstrip()
+
+
+def s2_heads(first, k):
+    """The first line unchanged, then with each of its integer tokens decremented by k (not below 0 if >= 0)."""
+    head, out = s2_pieces(first), [first]
+    for i, (_, tok) in enumerate(head):
+        if re.fullmatch(r"-?\d+", tok) and not (int(tok) >= 0 and int(tok) - k < 0):
+            out.append(s2_join([(sep, str(int(t) - k) if j == i else t) for j, (sep, t) in enumerate(head)]))
+    return out
+
+
 class Shrinker:
-    def __init__(self, problem, bug_dir, tmp, max_evals, wall, judge=None):
+    def __init__(self, problem, bug_dir, tmp, max_evals, wall, judge=None, s2=False):
+        self.s2, self.sizes = s2, {}
         self.judge = judge or Judge(problem, tmp)
         variant, size, seed, _ = read_bug(bug_dir)
         self.gen = TapeGen(problem, variant, seed, size, tmp)
@@ -383,18 +407,74 @@ class Shrinker:
             lines[j] = line(kept)
         return join(lines)
 
+    def mark(self, name):  # S2: input size at a stage boundary
+        self.sizes[name] = dict(tokens=ntokens(self.best), bytes=len(self.best.encode()))
+
+    def count_stage(self, text):
+        """S2 stage 3: count-aware deletions (see the header comment). Every accepted candidate has fewer tokens."""
+        end = "\n" if text.endswith("\n") else ""
+        lines = text[:len(text) - len(end)].split("\n")
+        join = lambda ls: "\n".join(ls) + end
+
+        def first_ok(cands, stage):  # first bug-preserving candidate (list of lines) that is strictly smaller
+            for c in cands:
+                if size_key(join(c)) < size_key(join(lines)) and self.text_ok(join(c), stage):
+                    return c
+            return None
+
+        changed = True
+        while changed:
+            changed = False
+            nb = len(lines) - 1  # 3a: line chunks; k starts at the largest power of two <= the number of body lines
+            k = 1 << (nb.bit_length() - 1) if nb else 0
+            while k >= 1:
+                i = 1
+                while i < len(lines):
+                    body = lines[1:i] + lines[i + k:]
+                    c = first_ok([[h] + body for h in s2_heads(lines[0], k)], "3a")
+                    if c:
+                        lines, changed = c, True
+                        self.accept("3a")
+                    else:
+                        i += k
+                k //= 2
+            for j in range(1, len(lines)):  # 3b: token chunks within each line after the first
+                ps = s2_pieces(lines[j])
+                k = 1 << (len(ps).bit_length() - 1) if ps else 0
+                while k >= 1:
+                    i = 0
+                    while i < len(ps):
+                        rest = s2_join(ps[:i] + ps[i + k:])
+                        c = first_ok([[h] + lines[1:j] + [rest] + lines[j + 1:] for h in s2_heads(lines[0], k)], "3b")
+                        if c:
+                            lines, changed = c, True
+                            ps = s2_pieces(lines[j])
+                            self.accept("3b")
+                        else:
+                            i += k
+                    k //= 2
+        return join(lines)
+
     def run(self, words, log, text):
         self.keep(text)
         try:
             words = self.tape_stage(words, log)
+            if self.s2:
+                self.mark("after_tape")
+                self.count_stage(self.best)
+                self.mark("after_count")
             self.text_stage(self.best)
+            if self.s2:
+                self.mark("after_ddmin")
         except Budget as b:
             self.stop = str(b)
+            if self.s2:
+                self.mark("at_stop")
         return self.best
 
 
-def shrink_bug(problem, bug_dir, out_dir, max_evals=2000, wall=60.0):
-    """Shrink one bug into out_dir (input.txt, info.json) -> info dict."""
+def shrink_bug(problem, bug_dir, out_dir, max_evals=2000, wall=60.0, s1=False):
+    """Shrink one bug into out_dir (input.txt, info.json) -> info dict. s1: the S1 shrinker (no stage 3, S1's info)."""
     out_dir.mkdir(parents=True, exist_ok=True)
     tmp = Path(f"/dev/shm/cf_shrink_{os.getpid()}")
     tmp.mkdir(exist_ok=True)
@@ -406,13 +486,15 @@ def shrink_bug(problem, bug_dir, out_dir, max_evals=2000, wall=60.0):
                     before=dict(tokens=ntokens(original), bytes=len(original.encode())))
         best, s = original, None
         if ok and info["original_verdict"] == "WA":
-            s = Shrinker(problem, bug_dir, tmp, max_evals, wall, judge)
+            s = Shrinker(problem, bug_dir, tmp, max_evals, wall, judge, s2=not s1)
             best = s.run(words, log, original)
         final = judge.verdict(best)
         info.update(after=dict(tokens=ntokens(best), bytes=len(best.encode())), final_verdict=final,
                     success=final == "WA", evals=s.evals if s else 0, stop=s.stop if s else "not shrunk",
                     stage_evals=s.stage_evals if s else {}, accepted=s.accepted if s else {},
                     wall_s=round(time.time() - t0, 3))
+        if not s1:
+            info.update(shrinker="s2", stage_sizes=dict(start=info["before"], **(s.sizes if s else {})))
         (out_dir / "input.txt").write_text(best)
         (out_dir / "info.json").write_text(json.dumps(info, indent=1) + "\n")
         return info
@@ -427,10 +509,11 @@ def new_main():
     ap.add_argument("--out", type=Path, required=True, help="output directory (never the bug directory)")
     ap.add_argument("--max-evals", type=int, default=2000)
     ap.add_argument("--wall", type=float, default=60.0)
+    ap.add_argument("--s1", action="store_true", help="the S1 shrinker (no count-aware stage), unchanged")
     a = ap.parse_args()
     if a.out.resolve() == a.bug_dir.resolve():
         raise SystemExit("--out must not be the bug directory")
-    info = shrink_bug(a.problem, a.bug_dir, a.out, a.max_evals, a.wall)
+    info = shrink_bug(a.problem, a.bug_dir, a.out, a.max_evals, a.wall, a.s1)
     print(json.dumps({k: info[k] for k in ("capture_ok", "original_verdict", "before", "after", "success", "evals", "stop", "wall_s")}))
     return 0 if info["success"] else 1
 

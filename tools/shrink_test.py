@@ -4,6 +4,11 @@
   nc2  a candidate whose verdict changes from WA to PE / unexpected EOF is rejected (a sol_bug wrapper that drops
        the last output line; exact-match problem -> PE, custom checker -> PE or EOF)
   det  two shrinker runs on the same bugs give byte-identical inputs and info (wall time excluded)
+  nc3  S2: decrementing a header count without deleting the matching body line is rejected by the verifier
+  s2   S2 unit test on a synthetic range_linear_add_range_min-shaped input (stub judge with the verifier's count rules:
+       n >= 1 values, q query lines "1 l r" with l < r <= n; one query among 20, "1 3 4", is needed): stage 3 reduces
+       it to that query with q = 1 (and n = 4: the minimum reachable without editing indices inside query lines,
+       not the true minimum)
   hang regression for the fixed stage-1 hang: a generator that re-pads deleted trailing words with zeros (as
        fallback_zero does) and a judge that accepts everything; the tape stage must terminate within HANG_BOUND
        evaluations (the pre-fix logic looped forever on memoised candidates)
@@ -81,6 +86,42 @@ def hang(module=shrink):
     return s.evals
 
 
+def nc3(tmp):
+    """range_add_range_min's gallery input with q (second header token) decremented and no line deleted."""
+    text = (BUGS / EXACT_DEV / "input.txt").read_text()
+    first, rest = text.split("\n", 1)
+    n, q = first.split()
+    return q, shrink.Judge(EXACT_DEV, tmp).verdict(f"{n} {int(q) - 1}\n{rest}")
+
+
+def s2_unit(module=shrink):
+    """-> (result, evaluations) of stage 3 on a synthetic input; expected: '4 1', 4 values, the needed query (n = 4 is
+    the minimum reachable without editing indices inside query lines, not the true minimum)."""
+    values = "7 7 7 7 7"
+    queries = ["1 0 1"] * 20
+    queries[13] = "1 3 4"  # the only query the stub's "bug" needs
+
+    class Judge:
+        def verdict(self, text):
+            lines = text.rstrip("\n").split("\n")
+            n, q = map(int, lines[0].split())
+            if n < 1 or len(lines) != 2 + q or len(lines[1].split()) != n:
+                return "invalid"
+            for l in lines[2:]:  # like the verifier: "1 l r" with 0 <= l < r <= n
+                t = l.split()
+                if len(t) != 3 or t[0] != "1" or not (0 <= int(t[1]) < int(t[2]) <= n):
+                    return "invalid"
+            return "WA" if "1 3 4" in lines[2:] else "ok"
+
+    s = object.__new__(module.Shrinker)
+    s.judge, s.s2, s.sizes = Judge(), True, {}
+    s.max_evals, s.wall, s.t0 = 10_000, 5.0, module.time.time()
+    s.evals, s.text_cache, s.tape_cache, s.best, s.stop, s.stage_evals, s.accepted = 0, {}, {}, None, "done", {}, {}
+    text = "\n".join(["5 20", values] + queries) + "\n"
+    s.keep(text)
+    return s.count_stage(text), s.evals
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--quick", action="store_true")
@@ -98,6 +139,14 @@ def main():
             ok = real == "WA" and fake in ("PE", "EOF")
             print(f"{'PASS' if ok else 'FAIL'}  nc2 {problem}: original verdict {real}; sol_bug minus its last line -> {fake} (rejected)")
             fails += not ok
+        q, v = nc3(tmp)
+        print(f"{'PASS' if v == 'invalid' else 'FAIL'}  nc3 {EXACT_DEV}: header q {q} -> {int(q) - 1} with no line deleted: "
+              f"verdict {v} (rejected)")
+        fails += v != "invalid"
+        out, ev = s2_unit()
+        ok = out == "4 1\n7 7 7 7\n1 3 4\n"
+        print(f"{'PASS' if ok else 'FAIL'}  s2 unit: 20 queries, 1 needed -> {out.splitlines()} in {ev} evaluations")
+        fails += not ok
         evals = hang()
         print(f"{'PASS' if evals <= HANG_BOUND else 'FAIL'}  hang regression: re-padding stub, tape stage finished after "
               f"{evals} evaluations (bound {HANG_BOUND})")
