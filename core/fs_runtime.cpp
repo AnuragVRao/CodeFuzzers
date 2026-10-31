@@ -17,8 +17,14 @@
 // normal exit (exit() / return from main) it stores out_len/log_len (capped) and consumed, and LAST
 // the flags with TAPE_COMPLETE. A budget exit (_Exit 85), crash or timeout writes no header field,
 // so the header stays cleared (COMPLETE = 0). Unarmed requests leave cf_session null (exact v1).
+//
+// Value profile (v3, docs/v3_roadmap.md Step V2): binaries built with -fsanitize-coverage=trace-cmp call the
+// __sanitizer_cov_trace_*cmp* hooks below. If the coverage memfd holds 2 x MAP_SIZE bytes, the second half is the
+// value-profile map: one byte per feature (hash of the compare's PC and floor(log2(|a - b| + 1))), set to 1.
+// Otherwise the features go to a dummy map. CF_VP_LOG=1 prints every compare ("cmp <pc> <a> <b>") to stderr.
 
 #include <cstddef>
+#include <cstdio>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -69,8 +75,10 @@ struct TapeHeader {  // same layout in server.hpp; byte offsets from the start o
 };
 static_assert(sizeof(TapeHeader) == 80, "protocol layout");
 
-unsigned char dummy_map[MAP_SIZE];
+unsigned char dummy_map[MAP_SIZE], dummy_vp[MAP_SIZE];
 unsigned char* cov_map = dummy_map;
+unsigned char* vp_map = dummy_vp;
+bool vp_log = false;
 uint32_t prev_loc = 0;
 char arg1[32], arg2[32];  // argv overrides must outlive cf_init's stack frame
 TapeHeader* tape = nullptr;  // mapping of fd 196 (generator servers in tape mode only)
@@ -122,12 +130,14 @@ long long now_us() {
 
 // glibc passes argc/argv/envp to ELF constructors.
 __attribute__((constructor(101))) static void cf_init(int argc, char** argv, char**) {
+    vp_log = getenv("CF_VP_LOG") != nullptr;
     if (fcntl(REQ_FD, F_GETFD) == -1) return;  // not under a fork server: run normally
-    if (fcntl(COV_FD, F_GETFD) != -1) {
-        void* p = mmap(nullptr, MAP_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, COV_FD, 0);
-        if (p != MAP_FAILED) cov_map = (unsigned char*)p;
-    }
     struct stat st;
+    if (fcntl(COV_FD, F_GETFD) != -1) {
+        bool vp = fstat(COV_FD, &st) == 0 && size_t(st.st_size) >= 2 * MAP_SIZE;
+        void* p = mmap(nullptr, vp ? 2 * MAP_SIZE : MAP_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, COV_FD, 0);
+        if (p != MAP_FAILED) cov_map = (unsigned char*)p, vp_map = vp ? cov_map + MAP_SIZE : dummy_vp;
+    }
     if (fcntl(TAPE_FD, F_GETFD) != -1 && fstat(TAPE_FD, &st) == 0 && size_t(st.st_size) >= sizeof(TapeHeader)) {
         void* p = mmap(nullptr, st.st_size, PROT_READ | PROT_WRITE, MAP_SHARED, TAPE_FD, 0);
         if (p != MAP_FAILED) tape = (TapeHeader*)p, tape_size = st.st_size;
@@ -178,4 +188,31 @@ extern "C" void __sanitizer_cov_trace_pc() {
     uint8_t& m = cov_map[cur ^ prev_loc];  // saturating hit count per edge
     if (m != 255) ++m;
     prev_loc = cur >> 1;
+}
+
+// Value profile (trace-cmp). Operands of narrow compares are sign-extended; |a - b| = min(a - b, b - a) mod 2^64,
+// which is the distance for both signed and unsigned operands.
+static inline void vp_feature(uint64_t pc, uint64_t a, uint64_t b) {
+    uint64_t d = a - b;
+    if (b - a < d) d = b - a;
+    uint64_t x = pc ^ (uint64_t(63 - __builtin_clzll(d + 1)) << 56);  // d <= 2^63, so d + 1 does not wrap
+    x ^= x >> 33, x *= 0xff51afd7ed558ccdULL, x ^= x >> 33;
+    vp_map[x & 0xFFFF] = 1;
+    if (vp_log) fprintf(stderr, "cmp %#llx %lld %lld\n", (unsigned long long)pc, (long long)a, (long long)b);
+}
+#define CF_PC ((uint64_t)__builtin_return_address(0))
+extern "C" {
+void __sanitizer_cov_trace_cmp1(uint8_t a, uint8_t b) { vp_feature(CF_PC, int8_t(a), int8_t(b)); }
+void __sanitizer_cov_trace_cmp2(uint16_t a, uint16_t b) { vp_feature(CF_PC, int16_t(a), int16_t(b)); }
+void __sanitizer_cov_trace_cmp4(uint32_t a, uint32_t b) { vp_feature(CF_PC, int32_t(a), int32_t(b)); }
+void __sanitizer_cov_trace_cmp8(uint64_t a, uint64_t b) { vp_feature(CF_PC, a, b); }
+void __sanitizer_cov_trace_const_cmp1(uint8_t a, uint8_t b) { vp_feature(CF_PC, int8_t(a), int8_t(b)); }
+void __sanitizer_cov_trace_const_cmp2(uint16_t a, uint16_t b) { vp_feature(CF_PC, int16_t(a), int16_t(b)); }
+void __sanitizer_cov_trace_const_cmp4(uint32_t a, uint32_t b) { vp_feature(CF_PC, int32_t(a), int32_t(b)); }
+void __sanitizer_cov_trace_const_cmp8(uint64_t a, uint64_t b) { vp_feature(CF_PC, a, b); }
+void __sanitizer_cov_trace_cmpf(float, float) {}   // floating-point compares carry no value-profile feature
+void __sanitizer_cov_trace_cmpd(double, double) {}
+void __sanitizer_cov_trace_switch(uint64_t v, uint64_t* cases) {  // cases = {count, bit width, values...}
+    for (uint64_t i = 0; i < cases[0]; i++) vp_feature(CF_PC + i, v, cases[2 + i]);
+}
 }

@@ -70,18 +70,21 @@ template <class E> void append(std::vector<E>& v, const E& e, size_t cap = MAX_E
 }
 
 // Unsynchronised state shared by GlobalLock, RWLock and NoShare (each adds its own locking).
+// len = map length in bytes (default MAP_SIZE; v3 --value-profile: 2 x MAP_SIZE, edge map + value-profile map).
 template <class E> struct State {
-    std::vector<uint8_t> map = std::vector<uint8_t>(MAP_SIZE, 0);
+    size_t len;
+    std::vector<uint8_t> map;
     std::vector<E> entries;
+    explicit State(size_t l = MAP_SIZE) : len(l), map(l, 0) {}
     bool pick(std::mt19937_64& rng, E& out) const {
         if (entries.empty()) return false;
         out = entries[below(rng, entries.size())];
         return true;
     }
-    bool novel(const uint8_t* cov) const { return is_new(cov, map.data(), 0, MAP_SIZE); }
+    bool novel(const uint8_t* cov) const { return is_new(cov, map.data(), 0, len); }
     bool report(const uint8_t* cov, const E& e) {
-        if (!is_new(cov, map.data(), 0, MAP_SIZE)) return false;
-        merge(cov, map.data(), 0, MAP_SIZE);
+        if (!is_new(cov, map.data(), 0, len)) return false;
+        merge(cov, map.data(), 0, len);
         append(entries, e);
         return true;
     }
@@ -95,6 +98,7 @@ template <class E> class GlobalLockT : public BasicPool<E> {
     std::mutex m;
     pool_impl::State<E> s;
 public:
+    explicit GlobalLockT(size_t len = pool_impl::MAP_SIZE) : s(len) {}
     bool pick(std::mt19937_64& rng, E& out) override { std::lock_guard<std::mutex> g(m); return s.pick(rng, out); }
     bool report(const uint8_t* cov, const E& e) override { std::lock_guard<std::mutex> g(m); return s.report(cov, e); }
     void touch(std::mt19937_64& rng) override { std::lock_guard<std::mutex> g(m); s.touch(rng); }
@@ -169,12 +173,13 @@ template <class E> class RWLockT : public BasicPool<E> {
     std::shared_mutex m;
     pool_impl::State<E> s;
 public:
+    explicit RWLockT(size_t len = pool_impl::MAP_SIZE) : s(len) {}
     bool pick(std::mt19937_64& rng, E& out) override { std::shared_lock<std::shared_mutex> g(m); return s.pick(rng, out); }
     bool novel(const uint8_t* cov) override { std::shared_lock<std::shared_mutex> g(m); return s.novel(cov); }
     bool report(const uint8_t* cov, const E& e) override {
         {
             std::shared_lock<std::shared_mutex> g(m);
-            if (!pool_impl::is_new(cov, s.map.data(), 0, pool_impl::MAP_SIZE)) return false;
+            if (!pool_impl::is_new(cov, s.map.data(), 0, s.len)) return false;
         }
         std::unique_lock<std::shared_mutex> g(m);
         return s.report(cov, e);  // checks again: another writer may have merged meanwhile
@@ -218,6 +223,7 @@ public:
 template <class E> class NoShareT : public BasicPool<E> {
     pool_impl::State<E> s;
 public:
+    explicit NoShareT(size_t len = pool_impl::MAP_SIZE) : s(len) {}
     bool pick(std::mt19937_64& rng, E& out) override { return s.pick(rng, out); }
     bool report(const uint8_t* cov, const E& e) override { return s.report(cov, e); }
     void touch(std::mt19937_64& rng) override { s.touch(rng); }
@@ -240,11 +246,13 @@ template <class E> void pool_dump(BasicPool<E>& p, std::vector<uint8_t>& map, si
     if (auto* q = dynamic_cast<NoShareT<E>*>(&p)) return q->dump(map, n);
 }
 
-template <class E = Entry> std::unique_ptr<BasicPool<E>> make_pool(const std::string& name) {
-    if (name == "global") return std::make_unique<GlobalLockT<E>>();
+// len: map length (sharded and snapshot support only the default MAP_SIZE; nullptr otherwise).
+template <class E = Entry> std::unique_ptr<BasicPool<E>> make_pool(const std::string& name, size_t len = pool_impl::MAP_SIZE) {
+    if (name == "global") return std::make_unique<GlobalLockT<E>>(len);
+    if (name == "rwlock") return std::make_unique<RWLockT<E>>(len);
+    if (name == "noshare") return std::make_unique<NoShareT<E>>(len);
+    if (len != pool_impl::MAP_SIZE) return nullptr;
     if (name == "sharded") return std::make_unique<ShardedT<E>>();
-    if (name == "rwlock") return std::make_unique<RWLockT<E>>();
     if (name == "snapshot") return std::make_unique<SnapshotT<E>>();
-    if (name == "noshare") return std::make_unique<NoShareT<E>>();
     return nullptr;
 }

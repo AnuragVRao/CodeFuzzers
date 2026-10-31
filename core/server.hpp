@@ -1,7 +1,8 @@
 // Client side of the fork server in core/fs_runtime.cpp, used by fuzzer worker threads.
 // A Server is one long-lived process of a binary built by tools/build.py, started with
 // posix_spawn (never fork, so it is safe from threads). Requests/replies go through pipes that
-// become fds 198/199 in the child; fd 197 is an optional memfd holding the 64 KiB coverage map.
+// become fds 198/199 in the child; fd 197 is an optional memfd holding the 64 KiB coverage map
+// (128 KiB with map_bytes = 2 x MAP_SIZE: edge map, then the v3 value-profile map).
 // Generator servers can also get a tape memfd on fd 196 (with_tape; docs/tape_design.md): a header
 // of offsets/capacities/counters (no pointers) followed by input words, output words and draw log.
 // run_tape() arms a session in the child; run() never does. run_gen_with_tape() is the worker API.
@@ -49,6 +50,7 @@ struct Server {
     static constexpr uint32_t TAPE_COMPLETE = 4;                       // set last by a normally exiting child
     static constexpr int TAPE_BUDGET_EXIT = 85;                        // = CF_TAPE_BUDGET_EXIT in random.h
     unsigned char* cov_map = nullptr;  // non-null only when started with_cov
+    size_t map_bytes = MAP_SIZE;       // coverage memfd size; set before start() (v3 --value-profile: 2 x MAP_SIZE)
     std::string out_path;              // the child's stdout file (cf_out)
     pid_t server_pid() const { return pid; }
 
@@ -66,8 +68,8 @@ struct Server {
         req[0] = away(req[0]), rep[1] = away(rep[1]);
         if (with_cov) {
             cov_fd = away(memfd_create("cf_cov", MFD_CLOEXEC));
-            if (cov_fd < 0 || ftruncate(cov_fd, MAP_SIZE)) return false;
-            void* p = mmap(nullptr, MAP_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, cov_fd, 0);
+            if (cov_fd < 0 || ftruncate(cov_fd, map_bytes)) return false;
+            void* p = mmap(nullptr, map_bytes, PROT_READ | PROT_WRITE, MAP_SHARED, cov_fd, 0);
             if (p == MAP_FAILED) return false;
             cov_map = (unsigned char*)p;
         }
@@ -139,7 +141,7 @@ struct Server {
         if (req_fd >= 0) close(req_fd);  // server sees EOF and exits
         if (rep_fd >= 0) close(rep_fd);
         if (pid > 0) waitpid(pid, nullptr, 0);
-        if (cov_map) munmap(cov_map, MAP_SIZE);
+        if (cov_map) munmap(cov_map, map_bytes);
         if (cov_fd >= 0) close(cov_fd);
         if (tape) munmap(tape, TAPE_BYTES);
         if (tape_fd >= 0) close(tape_fd);
@@ -164,7 +166,7 @@ private:
     TapeHeader* tape = nullptr;
 
     Result request(Request& rq, const std::string& a1, const std::string& a2, int timeout_ms) {
-        if (cov_map) memset(cov_map, 0, MAP_SIZE);
+        if (cov_map) memset(cov_map, 0, map_bytes);
         rq.timeout_ms = timeout_ms;
         strncpy(rq.a1, a1.c_str(), sizeof rq.a1 - 1);
         strncpy(rq.a2, a2.c_str(), sizeof rq.a2 - 1);

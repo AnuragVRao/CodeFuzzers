@@ -17,8 +17,8 @@ and forced-guard checks, secondary hypotheses) is cut.
 
 | Step | Title | Est. | Status | Commit |
 |---|---|---|---|---|
-| V1 | Deep bugs on 3 problems | 2.5 h | done | |
-| V2 | trace-cmp value profile | 2 h | | |
+| V1 | Deep bugs on 3 problems | 2.5 h | done | 39e9f40 |
+| V2 | trace-cmp value profile | 2 h | done | |
 | V3 | Cross-worker splice, origin, equal pool capacity, arms | 2 h | | |
 | V4 | The experiment (one pre-registered run set) | 2 h | | |
 | V5 | Report + README | 1 h | | |

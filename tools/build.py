@@ -20,6 +20,7 @@ BUILD, CORE = ROOT / "build", ROOT / "core"
 RUNTIME = BUILD / "fs_runtime.o"
 TAPE_RT = BUILD / "tape_file_runtime.o"
 COV = ["-fsanitize-coverage=trace-pc", "-no-pie"]
+COV_CMP = ["-fsanitize-coverage=trace-pc,trace-cmp", "-no-pie"]  # v3: fast_bug_deep only (value profile)
 # core/tests/tape_test.cpp is built once per group around one real generator (tape_test_<group>)
 TAPE_TESTS = {"arrays": "majority_voting", "strings": "longest_common_substring",
               "graphs": "connected_components_of_complement_graph"}
@@ -54,7 +55,7 @@ def problem_targets(p):
     deep = d / "sol_bug_deep.cpp"  # v3 deep bug (core/deep_bug.hpp), only where it exists
     if deep.exists():
         dfl = [*fl, "-I", str(CORE)]
-        jobs.append((out / "fast_bug_deep", ["g++", *dfl, *COV, "-o", str(out / "fast_bug_deep"), str(deep), str(RUNTIME)],
+        jobs.append((out / "fast_bug_deep", ["g++", *dfl, *COV_CMP, "-o", str(out / "fast_bug_deep"), str(deep), str(RUNTIME)],
                      [deep, *problems.header_deps(deep, dfl), RUNTIME]))
     tape = BUILD / "tape" / p["name"]  # build/tape/: generators with the file-based tape runtime
     jobs += [(tape / name, ["g++", *fl, "-o", str(tape / name), str(src), str(TAPE_RT)], [*hdr(src), TAPE_RT])

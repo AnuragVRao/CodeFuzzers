@@ -111,6 +111,10 @@ v3 work follows docs/v3_roadmap.md. Read it before any v3 task.
   64 KiB map of saturating edge hit counts in shared memory. Coverage = edge hit-count
   buckets (AFL-style {1},{2},{3},{4-7},{8-15},{16-31},{32-127},{128+}); the pool bitmap
   stores one bit per (edge, bucket). "cov_features" = popcount of that bitmap.
+  v3 value profile (docs/v3_roadmap.md V2): only fast_bug_deep is built with trace-pc,trace-cmp; with
+  --value-profile 1 the coverage memfd is 2 x 64 KiB (edge map, then a value-profile map of (compare PC,
+  floor(log2(|a-b|+1))) features) and admission is on a new bit in either half; "vp_features" = popcount of
+  the second half. Without the flag everything above is unchanged.
 - Timed region = worker loop only. Build, shrink, aggregation, and LLM calls are outside it.
 - Two modes: "scale" (fixed test count, never stops early) and "hunt" (all workers
   stop on the first mismatch).

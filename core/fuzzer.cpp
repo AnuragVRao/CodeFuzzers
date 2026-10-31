@@ -50,6 +50,7 @@ struct Config {
     std::string op_log;              // write one line per child with its applied operators here
     int max_size = 200, variants = 1, workers = 1, timeout_ms = 2000, extra_ops = 0;
     int tape_span = 0, tape_capture = 0;  // span ablation (tape recipes); empty-tape capture (random strategy)
+    int value_profile = 0;  // v3: fast's coverage memfd also holds the trace-cmp value-profile map (admission on either)
     long long arena_mb = 1024;  // tape arena size (--recipes tape only; no arena is created otherwise)
     long long tests = 1000, seed = 1;
     double time_limit = 60, write_frac = 0;
@@ -96,6 +97,7 @@ struct RecentHashes {
 };
 
 static Config cfg;
+static size_t map_len = pool_impl::MAP_SIZE;  // coverage bytes per test: edge map (+ v3 value-profile map)
 static std::vector<std::unique_ptr<Pool>> pools;  // 1 shared, 1 per worker (noshare), none (random)
 static std::vector<std::unique_ptr<BasicPool<TapeEntry>>> tape_pools;  // the same, for --recipes tape
 static std::unique_ptr<Arena> arena;               // tape words + draw logs (--recipes tape); null otherwise
@@ -125,8 +127,8 @@ static const struct Buckets {
 } buckets;
 
 // raw counts -> class map. Zero words (almost all of them) are just cleared.
-static void to_classes(const uint8_t* raw, uint8_t* cls) {
-    for (size_t i = 0; i < pool_impl::MAP_SIZE; i += 8) {
+static void to_classes(const uint8_t* raw, uint8_t* cls, size_t len) {
+    for (size_t i = 0; i < len; i += 8) {
         uint64_t w;
         memcpy(&w, raw + i, 8);
         if (!w) { memset(cls + i, 0, 8); continue; }
@@ -194,6 +196,7 @@ template <class E> static void worker(int w, std::vector<int> cpus) {
     bool custom = cfg.checker == "custom";
     const bool session = TAPE || cfg.tape_capture;  // the generator runs in a tape session
     Server gen[2], ref, fast, checker;
+    fast.map_bytes = map_len;
     std::vector<std::string> gargv;
     gen_argv(cfg.gen_template, gargv);  // validated in main
     bool ok = gen[0].start(cfg.build + "/gen", gargv, "/dev/null", in, false, session) &&
@@ -210,7 +213,7 @@ template <class E> static void worker(int w, std::vector<int> cpus) {
         bar_cv.wait(lk, [] { return go; });
     }
     BasicPool<E>* pool = pool_of<E>(w);
-    std::vector<uint8_t> cls(pool_impl::MAP_SIZE);
+    std::vector<uint8_t> cls(map_len);
     Stats& st = stats[w];
     std::mt19937_64 rng(cfg.seed * 1000003ULL + w);
     const int T = cfg.timeout_ms;
@@ -314,7 +317,7 @@ template <class E> static void worker(int w, std::vector<int> cpus) {
                     if (dead(cr)) break;
                     kind = checker_outcome(cr.exit_code);  // ref_fail / checker_error are not bugs
                 } else kind = same_tokens(out_fast, out_ref) ? "ok" : "WA";
-                to_classes(fast.cov_map, cls.data());
+                to_classes(fast.cov_map, cls.data(), map_len);
                 if (!pool) {  // random: no guidance, just remember what was covered
                     for (size_t i = 0; i < cls.size(); i++) seen[w][i] |= cls[i];
                 } else {
@@ -397,7 +400,7 @@ int main(int argc, char** argv) {
     }
     I("--max-size", cfg.max_size), I("--variants", cfg.variants), I("--workers", cfg.workers), I("--tests", cfg.tests);
     I("--seed", cfg.seed), I("--extra-ops", cfg.extra_ops), I("--timeout-ms", cfg.timeout_ms), I("--arena-mb", cfg.arena_mb);
-    I("--tape-span", cfg.tape_span), I("--tape-capture", cfg.tape_capture);
+    I("--tape-span", cfg.tape_span), I("--tape-capture", cfg.tape_capture), I("--value-profile", cfg.value_profile);
     D("--time-limit", cfg.time_limit), D("--write-frac", cfg.write_frac);
     const bool tape = cfg.recipes == "tape";
     if (cfg.fast != "sol" && cfg.fast != "bug" && cfg.fast != "bug_deep") { fprintf(stderr, "--fast sol|bug|bug_deep\n"); return 2; }
@@ -414,6 +417,11 @@ int main(int argc, char** argv) {
         fprintf(stderr, "--tape-span, --tape-mut and --dump-tapes need --recipes tape\n");
         return 2;
     }
+    if (cfg.value_profile && (cfg.strategy == "sharded" || cfg.strategy == "snapshot")) {
+        fprintf(stderr, "--value-profile supports --strategy random, noshare, rwlock, global\n");
+        return 2;
+    }
+    map_len = cfg.value_profile ? 2 * pool_impl::MAP_SIZE : pool_impl::MAP_SIZE;
     if (cfg.tape_capture && cfg.strategy != "random") { fprintf(stderr, "--tape-capture needs --strategy random\n"); return 2; }
     std::vector<int> cpus;
     std::stringstream cs(cfg.cpus);
@@ -421,11 +429,11 @@ int main(int argc, char** argv) {
 
     mkdir(("/dev/shm/cf_" + std::to_string(getpid())).c_str(), 0700);
     int n_pools = cfg.strategy == "noshare" ? cfg.workers : 1;
-    if (cfg.strategy == "random") seen.assign(cfg.workers, std::vector<uint8_t>(pool_impl::MAP_SIZE, 0));
+    if (cfg.strategy == "random") seen.assign(cfg.workers, std::vector<uint8_t>(map_len, 0));
     else if (tape)
-        for (int i = 0; i < n_pools; i++) tape_pools.push_back(make_pool<TapeEntry>(cfg.strategy));
+        for (int i = 0; i < n_pools; i++) tape_pools.push_back(make_pool<TapeEntry>(cfg.strategy, map_len));
     else
-        for (int i = 0; i < n_pools; i++) pools.push_back(make_pool(cfg.strategy));
+        for (int i = 0; i < n_pools; i++) pools.push_back(make_pool(cfg.strategy, map_len));
     if (tape) {
         arena = std::make_unique<Arena>(size_t(cfg.arena_mb) << 20);
         if (!arena->capacity()) { fprintf(stderr, "could not reserve a %lld MiB arena\n", cfg.arena_mb); return 1; }
@@ -460,7 +468,7 @@ int main(int argc, char** argv) {
         executed += s.executed.load();
     }
     double wall = std::chrono::duration<double>(t1 - t0).count();
-    std::vector<uint8_t> all(pool_impl::MAP_SIZE, 0), m;
+    std::vector<uint8_t> all(map_len, 0), m;
     size_t entries = 0, n;
     auto add = [&](auto& p) {
         pool_dump(*p, m, n), entries += n;
@@ -470,8 +478,8 @@ int main(int argc, char** argv) {
     for (auto& p : tape_pools) add(p);
     for (auto& s : seen)
         for (size_t i = 0; i < s.size(); i++) all[i] |= s[i];
-    int cov_features = 0;  // distinct (edge, hit-bucket) pairs
-    for (uint8_t b : all) cov_features += __builtin_popcount(b);
+    int cov_features = 0, vp_features = 0;  // distinct (edge, hit-bucket) pairs; value-profile features (v3)
+    for (size_t i = 0; i < all.size(); i++) (i < pool_impl::MAP_SIZE ? cov_features : vp_features) += __builtin_popcount(all[i]);
     if (!cfg.dump_tapes.empty() && !dump_tapes()) return 1;
     if (!cfg.op_log.empty()) {  // worker by worker, each in test order
         FILE* lf = fopen(cfg.op_log.c_str(), "w");
@@ -487,11 +495,11 @@ int main(int argc, char** argv) {
                "\"fast\": \"%s\", \"mode\": \"%s\", \"strategy\": \"%s\", \"workers\": %d, \"tests\": %lld, "
                "\"time_limit\": %g, \"seed\": %lld, \"extra_ops\": %d, \"write_frac\": %g, \"cpus\": \"%s\", "
                "\"timeout_ms\": %d, \"recipes\": \"%s\", \"out\": \"%s\", \"bug_dir\": \"%s\", \"gen_template\": \"%s\", \"size_dist\": \"%s\", "
-               "\"arena_mb\": %lld, \"tape_mut\": \"%s\", \"tape_span\": %d, \"tape_capture\": %d, \"op_log\": \"%s\"},\n",
+               "\"arena_mb\": %lld, \"tape_mut\": \"%s\", \"tape_span\": %d, \"tape_capture\": %d, \"op_log\": \"%s\", \"value_profile\": %d},\n",
             esc(cfg.build).c_str(), cfg.checker.c_str(), cfg.max_size, cfg.variants, cfg.fast.c_str(), cfg.mode.c_str(),
             cfg.strategy.c_str(), cfg.workers, cfg.tests, cfg.time_limit, cfg.seed, cfg.extra_ops, cfg.write_frac,
             cfg.cpus.c_str(), cfg.timeout_ms, cfg.recipes.c_str(), esc(cfg.out).c_str(), esc(cfg.bug_dir).c_str(), esc(cfg.gen_template).c_str(),
-            cfg.size_dist.c_str(), cfg.arena_mb, cfg.tape_mut.c_str(), cfg.tape_span, cfg.tape_capture, esc(cfg.op_log).c_str());
+            cfg.size_dist.c_str(), cfg.arena_mb, cfg.tape_mut.c_str(), cfg.tape_span, cfg.tape_capture, esc(cfg.op_log).c_str(), cfg.value_profile);
     fprintf(f, "  \"wall_s\": %.4f, \"tests\": %lld, \"tests_per_sec\": %.1f, \"mean_size\": %.2f,\n", wall,
             tot.tests, tot.tests / wall, tot.tests ? double(tot.size_sum) / tot.tests : 0.0);
     fprintf(f, "  \"outcomes\": {\"ok\": %lld, \"WA\": %lld, \"RE\": %lld, \"TLE\": %lld, \"invalid\": %lld, \"gen_skip\": %lld, "
@@ -508,8 +516,8 @@ int main(int argc, char** argv) {
                 tot.op_applied[op], tot.op_children[op], tot.op_changed[op]);
     fprintf(f, "},\n  \"arena_bytes\": %zu, \"arena_full\": %llu,\n", arena ? arena->bytes() : 0,
             (unsigned long long)(arena ? arena->arena_full() : 0));  // peak (the arena is append-only)
-    fprintf(f, "  \"new_cov_reports\": %lld, \"cov_features\": %d, \"pool_entries\": %zu,\n  \"per_worker_tests\": [",
-            tot.news, cov_features, entries);
+    fprintf(f, "  \"new_cov_reports\": %lld, \"cov_features\": %d, \"vp_features\": %d, \"pool_entries\": %zu,\n  \"per_worker_tests\": [",
+            tot.news, cov_features, vp_features, entries);
     for (int w = 0; w < cfg.workers; w++) fprintf(f, "%s%lld", w ? ", " : "", stats[w].tests);
     fprintf(f, "],\n  \"first_bug\": ");
     if (!first_bug.found) fprintf(f, "null");
