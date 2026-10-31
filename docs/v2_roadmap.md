@@ -31,7 +31,7 @@ This file is the single source of truth for the v2 work. Claude Code: read this 
 | 2c | Tape arena + pool entry handles | done | 1bc0350 |
 | 2d | Tape mutation, dedup, metrics, arms | done | 0dbb9f8 |
 | 2e | Mutation diagnostics + pre-declared pilot (PROCEED/STOP) | done, verdict STOP ((a) PASS, (b) FAIL; docs/v2_results.md) | 78c6ddb |
-| S | Shrinker: tape shrinking + verifier-checked text ddmin | todo | |
+| S | Shrinker: tape shrinking + verifier-checked text ddmin | done (S1 results fda85cf, S2 results 250845b; limitation: no renumbering of indices inside body lines, future work) | 250845b |
 | 3 | trace-cmp value profile (only if 2e = PROCEED) | cancelled by the committed criterion (2e = STOP) | |
 | 4 | v2 confirmatory pre-registration + runs (only if 2e = PROCEED) | cancelled by the committed criterion (2e = STOP) | |
 

@@ -45,8 +45,13 @@ v2 work follows docs/v2_roadmap.md. Read it before any v2 task.
     replay_first_bugs.py   replays v1 first bugs (Step 0.2 evidence -> results/derived/)
     analyze.py, server.py, e2e_test.sh   analysis server (upload, queue, SSE) and its end-to-end test
     part2.py        v2 Part 2 pipeline + mut_similarity; fp_sim.py  pilot false-PROCEED simulation
+    part2_oplog.py  Part 2 op-log analysis; pilot_report.py  pilot criterion (b) report;
+                    pilot_posthoc.py  post-hoc pilot analysis (root/child, bootstrap CIs, rate decomposition)
+    shrink_report.py, shrink_report_s2.py   Step S / S2 EVAL reports (old, S1, S2 shrinkers)
 - docs/             v2_roadmap.md (v2 plan + status), tape_design.md (v2 spec as built), v2_pilot_plan.md
-                    (pre-registration), known_issues.md, v1_data_archive.md + v1_archive.sha256, DEMO.md
+                    (pre-registration), v2_results.md (append-only results) + v2_pilot_raw.sha256 (pilot raw-output
+                    manifest), shrink_plan.md / shrink_plan_s2.md (frozen Step S / S2 plans), known_issues.md,
+                    v1_data_archive.md + v1_archive.sha256, DEMO.md
 - examples/         sample uploads for the analysis server (incl. _guardrails/)
 - .gitattributes    *.md text eol=lf
 - build/            compiled binaries (gitignored); build/plain/ = plain binaries for Python tools;
