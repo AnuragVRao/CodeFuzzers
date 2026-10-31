@@ -273,3 +273,92 @@ Old shrinker failures under the predicate (bug, verdict, exit): none
 | majority_voting | 1.64 (n=200) | 1.67 (n=200) | 1.65 (n=200) | 1.64 (n=189) | 1.61 (n=269) | 2.30 (n=1) |
 | range_linear_add_range_min | 17.77 (n=200) | 15.36 (n=200) | 15.82 (n=200) | 16.00 (n=188) | 15.91 (n=265) | 2.73 (n=1) |
 | longest_common_substring | 1.00 (n=32) | 1.00 (n=42) | 1.00 (n=32) | 1.00 (n=28) | 1.00 (n=39) | 1.00 (n=1) |
+
+## Step S: post-hoc diagnosis (2026-10-31)
+
+Read-only analysis of the existing EVAL outputs (results/shrink/eval/), new shrinker, per distinct input; descriptive,
+not part of any evaluation criterion. Hand checks re-judge inputs with the shrinker's predicate (fresh processes).
+
+(a) Header counts before vs after (first input line: n and q; for majority_voting N and Q).
+
+| problem | n | q unchanged | n unchanged | q after/before median [q1, q3] | n after/before median [q1, q3] | after q median | after n median |
+|---|---:|---:|---:|---|---|---:|---:|
+| range_linear_add_range_min | 941 | 61 (6.5%) | 627 (66.6%) | 0.660 [0.434, 0.851] | 1.000 [0.775, 1.000] | 43 | 15 |
+| majority_voting | 967 | 0 (0.0%) | 721 (74.6%) | 0.019 [0.009, 0.052] | 1.000 [1.000, 1.000] | 1 | 103 |
+
+For majority_voting q fell to a median of 1 while n was unchanged in 74.6% of inputs; for range_linear_add_range_min
+the median q ratio is 0.660 and n was unchanged in 66.6% of inputs.
+
+(b) Tokens removed by the tape phase vs the ddmin phase: not recorded. info.json stores evaluations and accepted steps
+per stage (stage_evals, accepted) but not the input size at the stage 1 / stage 2 boundary, so the split cannot be
+computed from the saved outputs without re-running.
+
+(c) range_linear_add_range_min, median-sized final input (174 tokens, the middle of the 941 sorted sizes; the first
+such input in the fixed order): pilot__range_linear_add_range_min__random-capture_w8_k0_f0_r100 (206 -> 174 tokens,
+2,355 evaluations, stop "done"). Its final input has n = 15 and q = 45:
+
+```
+15 45
+-1000000000 -1000000000 -1000000000 -1000000000 -1000000000 -1000000000 -1000000000 -1000000000 -1000000000 -1000000000 -1000000000 990487278 -1000000000 -1000000000 -1000000000
+0 0 5 -100 -9999999
+1 0 1
+1 0 1
+0 12 13 -100 -10000000
+1 0 1
+1 0 1
+1 0 1
+0 0 12 -100 7882991
+1 0 1
+1 0 1
+0 0 12 -100 1631932
+1 0 1
+1 0 1
+1 0 1
+1 0 1
+1 0 1
+0 0 1 -100 -10000000
+1 0 1
+1 0 1
+1 0 1
+0 0 1 -100 -10000000
+1 0 1
+1 0 1
+1 0 1
+1 0 1
+1 0 1
+0 0 1 -100 -10000000
+1 0 1
+0 0 1 -100 -10000000
+1 0 1
+1 0 1
+1 0 1
+1 0 1
+0 0 1 -100 -10000000
+1 0 1
+1 0 1
+0 0 1 -100 -10000000
+1 0 1
+1 0 1
+1 0 1
+1 0 1
+0 0 1 -100 -10000000
+1 0 1
+1 0 1
+1 11 12
+```
+
+Hand check, deleting one query line at a time with q decremented to 44: 42 of the 45 query lines can each be removed
+with the verdict still WA; the 3 needed lines are query 8 (`0 0 12 -100 7882991`), query 11 (`0 0 12 -100 1631932`)
+and query 45 (`1 11 12`), each giving "ok" when removed. Removing all 42 together (q = 3) still gives WA, at 30
+tokens / 231 bytes.
+
+| query lines | removable one at a time (q decremented) | needed | all 42 removed together |
+|---:|---:|---:|---|
+| 45 | 42 | 3 (queries 8, 11, 45) | WA, 30 tokens, 231 bytes |
+
+In this case only 3 of the 45 query lines are needed for the WA, and the input without the other 42 has 30 tokens
+against the shrinker's 174.
+
+Note (2026-10-31): Dataset/bugs.json is authoritative for majority_voting's trigger (corrected in commit 3f13a62);
+results/bugs/gallery.json still holds the old text ("more than 64 occurrence slots") because the gallery was
+deliberately not regenerated, which would rewrite results/bugs/.
