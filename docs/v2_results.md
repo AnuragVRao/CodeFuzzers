@@ -362,3 +362,111 @@ against the shrinker's 174.
 Note (2026-10-31): Dataset/bugs.json is authoritative for majority_voting's trigger (corrected in commit 3f13a62);
 results/bugs/gallery.json still holds the old text ("more than 64 occurrence slots") because the gallery was
 deliberately not regenerated, which would rewrite results/bugs/.
+
+## Step S2: shrinker evaluation (2026-10-31)
+
+- Plan: docs/shrink_plan_s2.md, frozen in commit 618f6fc (with the S2 code); the run used 618f6fc. S2 is the final
+  shrinker iteration (plan); it was designed after S1's EVAL results were seen (disclosure in the plan).
+- Run, once, on an otherwise idle machine, 2026-10-31 08:38:00-10:21:20 UTC:
+  `python3 tools/shrink_run.py --set eval --shrinker new --jobs 8 --max-evals 10000 --wall 300 --out results/shrink/eval_s2`
+  (6,186 s), then the cold-start replay `python3 tools/shrink_run.py --set eval --replay --out results/shrink/eval_s2`:
+  1,973 / 1,973 final S2 inputs reproduce the original verdict (WA).
+- results/raw/ and results/bugs/: all 22,187 files matched the sha256 snapshot before and after the run.
+- S1 and the old shrinker were not re-run; their rows below are recomputed from results/shrink/eval/ and
+  results/shrink/eval_old/ and are identical to "Step S: shrinker evaluation".
+- Report: `python3 tools/shrink_report_s2.py`; results/shrink/eval_s2/summary.json sha256 3bce8ea996054c8a74fb89742e36cbb4a4e5c3fb99a2086adb2d7917818224e3.
+- Floors (tokens / bytes): majority_voting 69 / 140, range_linear_add_range_min 11 / 30, longest_common_substring 3 / 5.
+  Columns: medians with [q1, q3]; "evaluations" for the old shrinker are its generator-space tests_used.
+
+Inputs: 1973 distinct (shrunk once each), 3513 bugs.
+
+#### S2, per distinct input (primary)
+
+| problem | shrinker | n | before tokens | before bytes | after tokens | after bytes | after/before (tokens) | after/floor (tokens) | at floor | evaluations median / max | cap / wall hits | success |
+|---|---|---:|---|---|---|---|---|---|---:|---|---|---|
+| majority_voting | S2 | 967 | 401 [311, 490] | 2151 [1846, 2449] | 112 [103, 121] | 228 [208, 246] | 0.281 [0.218, 0.371] | 1.62 [1.49, 1.75] | 1 (0.1%) | 3624 / 10000 | 3 cap, 0 wall | 967 / 967 |
+| range_linear_add_range_min | S2 | 941 | 350 [189, 531] | 1311 [689, 2008] | 30 [19, 46] | 173 [99, 351] | 0.109 [0.065, 0.166] | 2.73 [1.73, 4.18] | 52 (5.5%) | 2565 / 10000 | 10 cap, 0 wall | 941 / 941 |
+| longest_common_substring | S2 | 65 | 8 [6, 9] | 10 [8, 11] | 3 [3, 3] | 5 [5, 5] | 0.375 [0.333, 0.500] | 1.00 [1.00, 1.00] | 65 (100.0%) | 36 / 85 | 0 cap, 0 wall | 65 / 65 |
+
+#### S2, per bug (secondary; each bug takes its representative's result)
+
+| problem | shrinker | n | before tokens | before bytes | after tokens | after bytes | after/before (tokens) | after/floor (tokens) | at floor | evaluations median / max | cap / wall hits | success |
+|---|---|---:|---|---|---|---|---|---|---:|---|---|---|
+| majority_voting | S2 | 1171 | 400 [311, 489] | 2142 [1844, 2451] | 112 [103, 121] | 228 [208, 246] | 0.281 [0.218, 0.368] | 1.62 [1.49, 1.75] | 1 (0.1%) | 3620 / 10000 | 3 cap, 0 wall | 1171 / 1171 |
+| range_linear_add_range_min | S2 | 1171 | 351 [195, 531] | 1320 [704, 1982] | 30 [20, 46] | 174 [101, 353] | 0.108 [0.066, 0.163] | 2.73 [1.86, 4.18] | 66 (5.6%) | 2586 / 10000 | 11 cap, 0 wall | 1171 / 1171 |
+| longest_common_substring | S2 | 1171 | 4 [3, 5] | 6 [5, 7] | 3 [3, 3] | 5 [5, 5] | 0.750 [0.600, 1.000] | 1.00 [1.00, 1.00] | 1171 (100.0%) | 25 / 85 | 0 cap, 0 wall | 1171 / 1171 |
+
+#### S1 and old shrinker (repeated unchanged from "Step S: shrinker evaluation")
+
+#### S1 and old, per distinct input (primary)
+
+| problem | shrinker | n | before tokens | before bytes | after tokens | after bytes | after/before (tokens) | after/floor (tokens) | at floor | evaluations median / max | cap / budget hits | success |
+|---|---|---:|---|---|---|---|---|---|---:|---|---|---|
+| majority_voting | new | 967 | 401 [311, 490] | 2151 [1846, 2449] | 113 [103, 124] | 230 [209, 252] | 0.288 [0.221, 0.377] | 1.64 [1.49, 1.80] | 1 (0.1%) | 3308 / 10000 | 3 cap, 0 wall | 967 / 967 |
+| majority_voting | old | 967 | 401 [311, 490] | 2151 [1846, 2449] | 378 [294, 463] | 2059 [1780, 2365] | 1.000 [1.000, 1.000] | 5.48 [4.26, 6.71] | 0 (0.0%) | 576 / 1344 | 0 at 4,000 tests | 967 / 967 |
+| range_linear_add_range_min | new | 941 | 350 [189, 531] | 1311 [689, 2008] | 174 [90, 295] | 672 [361, 1125] | 0.603 [0.419, 0.752] | 15.82 [8.18, 26.82] | 8 (0.9%) | 2632 / 10000 | 10 cap, 0 wall | 941 / 941 |
+| range_linear_add_range_min | old | 941 | 350 [189, 531] | 1311 [689, 2008] | 187 [81, 366] | 689 [289, 1381] | 1.000 [0.321, 1.000] | 17.00 [7.36, 33.27] | 11 (1.2%) | 576 / 1984 | 0 at 4,000 tests | 941 / 941 |
+| longest_common_substring | new | 65 | 8 [6, 9] | 10 [8, 11] | 3 [3, 3] | 5 [5, 5] | 0.375 [0.333, 0.500] | 1.00 [1.00, 1.00] | 65 (100.0%) | 35 / 84 | 0 cap, 0 wall | 65 / 65 |
+| longest_common_substring | old | 65 | 8 [6, 9] | 10 [8, 11] | 3 [3, 3] | 5 [5, 5] | 0.375 [0.333, 0.500] | 1.00 [1.00, 1.00] | 65 (100.0%) | 640 / 768 | 0 at 4,000 tests | 65 / 65 |
+
+#### S1 and old, per bug (secondary)
+
+| problem | shrinker | n | before tokens | before bytes | after tokens | after bytes | after/before (tokens) | after/floor (tokens) | at floor | evaluations median / max | cap / budget hits | success |
+|---|---|---:|---|---|---|---|---|---|---:|---|---|---|
+| majority_voting | new | 1171 | 400 [311, 489] | 2142 [1844, 2451] | 113 [103, 124] | 230 [208, 252] | 0.287 [0.221, 0.375] | 1.64 [1.49, 1.80] | 1 (0.1%) | 3282 / 10000 | 3 cap, 0 wall | 1171 / 1171 |
+| majority_voting | old | 1171 | 400 [311, 489] | 2142 [1844, 2451] | 378 [294, 466] | 2058 [1768, 2370] | 1.000 [1.000, 1.000] | 5.48 [4.26, 6.75] | 0 (0.0%) | 576 / 1344 | 0 at 4,000 tests | 1171 / 1171 |
+| range_linear_add_range_min | new | 1171 | 351 [195, 531] | 1320 [704, 1982] | 175 [96, 295] | 675 [372, 1113] | 0.597 [0.419, 0.753] | 15.91 [8.68, 26.82] | 10 (0.9%) | 2663 / 10000 | 11 cap, 0 wall | 1171 / 1171 |
+| range_linear_add_range_min | old | 1171 | 351 [195, 531] | 1320 [704, 1982] | 186 [77, 363] | 687 [289, 1369] | 1.000 [0.312, 1.000] | 16.91 [7.00, 33.00] | 13 (1.1%) | 576 / 1984 | 0 at 4,000 tests | 1171 / 1171 |
+| longest_common_substring | new | 1171 | 4 [3, 5] | 6 [5, 7] | 3 [3, 3] | 5 [5, 5] | 0.750 [0.600, 1.000] | 1.00 [1.00, 1.00] | 1171 (100.0%) | 24 / 84 | 0 cap, 0 wall | 1171 / 1171 |
+| longest_common_substring | old | 1171 | 4 [3, 5] | 6 [5, 7] | 3 [3, 3] | 5 [5, 5] | 0.750 [0.600, 1.000] | 1.00 [1.00, 1.00] | 1171 (100.0%) | 640 / 768 | 0 at 4,000 tests | 1171 / 1171 |
+
+#### Paired S2 vs S1 on the same distinct inputs (after tokens)
+
+| problem | n | S2 smaller | equal | S2 larger | S2/S1 ratio median [q1, q3] |
+|---|---:|---:|---:|---:|---|
+| majority_voting | 967 | 425 | 542 | 0 | 1.000 [0.973, 1.000] |
+| range_linear_add_range_min | 941 | 922 | 19 | 0 | 0.201 [0.130, 0.324] |
+| longest_common_substring | 65 | 0 | 65 | 0 | 1.000 [1.000, 1.000] |
+
+#### S2 stage-boundary sizes (tokens; medians [q1, q3] over the inputs that reached each boundary)
+
+| problem | start | after tape | after count | after ddmin |
+|---|---|---|---|---|
+| majority_voting | 401 [311, 490] (n=967) | 113 [103, 124] (n=964) | 112 [103, 121] (n=964) | 112 [103, 121] (n=964) |
+| range_linear_add_range_min | 350 [189, 531] (n=941) | 172 [90, 293] (n=932) | 29 [19, 46] (n=931) | 29 [19, 46] (n=931) |
+| longest_common_substring | 8 [6, 9] (n=65) | 5 [3, 7] (n=65) | 4 [3, 7] (n=65) | 3 [3, 3] (n=65) |
+
+#### S2 header counts before vs after (first input line: n and q; for majority_voting N and Q)
+
+| problem | n | q unchanged | n unchanged | q after/before median [q1, q3] | n after/before median [q1, q3] | after q median | after n median |
+|---|---:|---:|---:|---|---|---:|---:|
+| range_linear_add_range_min | 941 | 5 (0.5%) | 139 (14.8%) | 0.051 [0.032, 0.087] | 0.581 [0.357, 0.844] | 3 | 8 |
+| majority_voting | 967 | 0 (0.0%) | 479 (49.5%) | 0.016 [0.009, 0.043] | 0.995 [0.981, 1.000] | 1 | 102 |
+
+S2 cap hits (13), with the stage in which the budget ran out:
+- hunt-focus__range_linear_add_range_min__noshare_w8_k0_f0_r98 (range_linear_add_range_min): tape
+- hunt-focus__range_linear_add_range_min__random_w8_k0_f0_r44 (range_linear_add_range_min): tape
+- hunt-focus__range_linear_add_range_min__rwlock_w8_k0_f0_r55 (range_linear_add_range_min): tape
+- hunt__range_linear_add_range_min__rwlock_w20_k0_f0_r26 (range_linear_add_range_min): count
+- pilot__majority_voting__random-capture_w8_k0_f0_r196 (majority_voting): tape
+- pilot__majority_voting__tape-noshare_w8_k0_f0_r193 (majority_voting): tape
+- pilot__majority_voting__tape-rwlock_w8_k0_f0_r193 (majority_voting): tape
+- pilot__range_linear_add_range_min__random-capture_w8_k0_f0_r35 (range_linear_add_range_min): tape
+- pilot__range_linear_add_range_min__random-capture_w8_k0_f0_r88 (range_linear_add_range_min): tape
+- pilot__range_linear_add_range_min__tape-noshare_w8_k0_f0_r197 (range_linear_add_range_min): tape
+- pilot__range_linear_add_range_min__tape-rwlock_w8_k0_f0_r107 (range_linear_add_range_min): tape
+- pilot__range_linear_add_range_min__tape-rwlock_w8_k0_f0_r18 (range_linear_add_range_min): tape
+- pilot__range_linear_add_range_min__tape-rwlock_w8_k0_f0_r71 (range_linear_add_range_min): tape
+
+S2 wall-stop hits: none
+S2 failures (bug, final verdict): none
+
+### Post-hoc: majority_voting (read-only, post-hoc; not part of the plan)
+Final S2 inputs, per distinct input (967): every final input has exactly one t = 1 query (and 0 to 14 updates).
+
+| query right end | inputs | S2/S1 after-token ratio median [q1, q3] |
+|---|---:|---|
+| equals n | 965 (99.8%) | 1.000 [0.973, 1.000] |
+| < n | 2 (0.2%) | 1.000 [1.000, 1.000] |
+
+In 965 of the 967 final inputs the single query's right end equals n.
