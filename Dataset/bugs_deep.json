@@ -1,0 +1,149 @@
+{
+ "range_add_range_min": {
+  "qualified": true,
+  "samples": 2000,
+  "generator_skips": 0,
+  "band": [
+   15000,
+   120000
+  ],
+  "rounds": [
+   {
+    "p": 0.026,
+    "constants": {
+     "C1": 158,
+     "C2": 929744142,
+     "M": 38,
+     "C3": 33
+    },
+    "rates": {
+     "g1": 0.026,
+     "g2": 0.026,
+     "g3": 0.026
+    },
+    "trigger": {
+     "verifier_ok": true,
+     "sol": "ok",
+     "deep": "WA",
+     "ok": true
+    },
+    "calibration": {
+     "median": 50142.0,
+     "q1": 23139,
+     "q3": 79876,
+     "censored": 0,
+     "tests_to_bug": [
+      270,
+      14599,
+      56602,
+      79876,
+      23139,
+      25525,
+      43682,
+      197326,
+      76450,
+      203824
+     ]
+    }
+   }
+  ]
+ },
+ "range_affine_range_sum": {
+  "qualified": true,
+  "samples": 2000,
+  "generator_skips": 0,
+  "band": [
+   15000,
+   120000
+  ],
+  "rounds": [
+   {
+    "p": 0.026,
+    "constants": {
+     "C1": 158,
+     "C2": 975574924,
+     "M": 38,
+     "C3": 0
+    },
+    "rates": {
+     "g1": 0.026,
+     "g2": 0.026,
+     "g3": 0.026
+    },
+    "trigger": {
+     "verifier_ok": true,
+     "sol": "ok",
+     "deep": "WA",
+     "ok": true
+    },
+    "calibration": {
+     "median": 27042.0,
+     "q1": 14694,
+     "q3": 58820,
+     "censored": 0,
+     "tests_to_bug": [
+      95385,
+      87044,
+      34810,
+      4641,
+      19265,
+      5177,
+      14694,
+      58820,
+      32270,
+      21814
+     ]
+    }
+   }
+  ]
+ },
+ "range_set_range_composite": {
+  "qualified": true,
+  "samples": 2000,
+  "generator_skips": 0,
+  "band": [
+   15000,
+   120000
+  ],
+  "rounds": [
+   {
+    "p": 0.026,
+    "constants": {
+     "C1": 158,
+     "C2": 975574925,
+     "M": 38,
+     "C3": 32
+    },
+    "rates": {
+     "g1": 0.026,
+     "g2": 0.026,
+     "g3": 0.026
+    },
+    "trigger": {
+     "verifier_ok": true,
+     "sol": "ok",
+     "deep": "WA",
+     "ok": true
+    },
+    "calibration": {
+     "median": 59817.5,
+     "q1": 21324,
+     "q3": 126648,
+     "censored": 0,
+     "tests_to_bug": [
+      54896,
+      79163,
+      19271,
+      126648,
+      16204,
+      64739,
+      34381,
+      21324,
+      199339,
+      165977
+     ]
+    }
+   }
+  ]
+ }
+}

@@ -199,7 +199,7 @@ template <class E> static void worker(int w, std::vector<int> cpus) {
     bool ok = gen[0].start(cfg.build + "/gen", gargv, "/dev/null", in, false, session) &&
               (cfg.variants < 2 || gen[1].start(cfg.build + "/gen_alt", gargv, "/dev/null", in, false, session)) &&
               ref.start(cfg.build + "/ref", {"ref"}, in, out_ref, false) &&
-              fast.start(cfg.build + (cfg.fast == "sol" ? "/fast_sol" : "/fast_bug"), {"fast"}, in, out_fast, true) &&
+              fast.start(cfg.build + "/fast_" + cfg.fast, {"fast"}, in, out_fast, true) &&
               (!custom || checker.start(cfg.build + "/checker", {"checker", in, out_fast, out_ref}, "/dev/null", "/dev/null", false));
     if (!ok) fprintf(stderr, "worker %d: failed to start servers\n", w), failed = true;
 
@@ -400,6 +400,7 @@ int main(int argc, char** argv) {
     I("--tape-span", cfg.tape_span), I("--tape-capture", cfg.tape_capture);
     D("--time-limit", cfg.time_limit), D("--write-frac", cfg.write_frac);
     const bool tape = cfg.recipes == "tape";
+    if (cfg.fast != "sol" && cfg.fast != "bug" && cfg.fast != "bug_deep") { fprintf(stderr, "--fast sol|bug|bug_deep\n"); return 2; }
     if (cfg.size_dist != "uniform" && cfg.size_dist != "log") { fprintf(stderr, "--size-dist uniform|log\n"); return 2; }
     if (cfg.recipes != "guided" && cfg.recipes != "random" && !tape) { fprintf(stderr, "--recipes guided|random|tape\n"); return 2; }
     if (cfg.strategy != "random" && !make_pool(cfg.strategy)) { fprintf(stderr, "unknown strategy %s\n", cfg.strategy.c_str()); return 2; }

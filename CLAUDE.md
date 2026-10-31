@@ -4,6 +4,7 @@ code must be small, readable, and to the point. Prefer fewer files. No framework
 beyond those listed here.
 
 v2 work follows docs/v2_roadmap.md. Read it before any v2 task.
+v3 work follows docs/v3_roadmap.md. Read it before any v3 task.
 
 ## Layout
 - Dataset/problems/<group>/<name>/  dataset; groups: arrays, graphs, strings.
@@ -11,6 +12,8 @@ v2 work follows docs/v2_roadmap.md. Read it before any v2 task.
   (never modify unless explicitly asked; generators got a size knob, sol_bug.cpp was added)
   Exception (team-approved): Dataset/common/random.h may be modified for random-tape support,
   provided tools/golden_gen.py --check passes when no tape is supplied.
+  Exception (user-approved 2026-10-31, v3): sol_bug_deep.cpp (sol.cpp + one guarded perturbation from
+  core/deep_bug.hpp, constants written only by tools/deep_calib.py) and Dataset/bugs_deep.json may be added.
 - fuzz_config.json  per-problem settings: {"<problem>": {"max_size": N}}
 - requirements.txt  numpy, scipy, matplotlib (pinned); nothing else for Python
 - core/             C++17, header-light:
@@ -20,6 +23,7 @@ v2 work follows docs/v2_roadmap.md. Read it before any v2 task.
     fuzzer.cpp      the multi-threaded fuzzer (scale / hunt; v2 --recipes tape, --tape-capture, --op-log), JSON summary
     pool_bench.cpp  pool-only micro-benchmark and --check; smoke.cpp single-threaded e2e test
     compare.hpp     token comparison, checker_outcome(), hash_bytes()
+    deep_bug.hpp    v3 deep-bug guard + output perturbation, included by sol_bug_deep.cpp (built as fast_bug_deep)
     arena.hpp       v2 tape arena + TapeHandle/TapeEntry; mutate.hpp  v2 tape mutation operators
     part2.cpp       v2 Step 2e Part 2 children generator (run by tools/part2.py)
     tape_file_runtime.cpp  file-based tape sessions (CF_TAPE_* env vars) for the build/tape/ generators (Step S)
@@ -42,13 +46,14 @@ v2 work follows docs/v2_roadmap.md. Read it before any v2 task.
     selftest.sh     build + all self-tests, PASS/FAIL per item
     golden_gen.py   golden generator hashes (--check: runtime-linked and build/plain/ generators)
     checker_agree_test.py  C++ vs Python checker-outcome mapping
+    deep_calib.py   v3 Step V1: deep-bug constants (sampling), trigger check, random-capture calibration
     replay_first_bugs.py   replays v1 first bugs (Step 0.2 evidence -> results/derived/)
     analyze.py, server.py, e2e_test.sh   analysis server (upload, queue, SSE) and its end-to-end test
     part2.py        v2 Part 2 pipeline + mut_similarity; fp_sim.py  pilot false-PROCEED simulation
     part2_oplog.py  Part 2 op-log analysis; pilot_report.py  pilot criterion (b) report;
                     pilot_posthoc.py  post-hoc pilot analysis (root/child, bootstrap CIs, rate decomposition)
     shrink_report.py, shrink_report_s2.py   Step S / S2 EVAL reports (old, S1, S2 shrinkers)
-- docs/             v2_roadmap.md (v2 plan + status), tape_design.md (v2 spec as built), v2_pilot_plan.md
+- docs/             v2_roadmap.md (v2 plan + status), v3_roadmap.md (v3 plan + status), tape_design.md (v2 spec as built), v2_pilot_plan.md
                     (pre-registration), v2_results.md (append-only results) + v2_pilot_raw.sha256 (pilot raw-output
                     manifest), shrink_plan.md / shrink_plan_s2.md (frozen Step S / S2 plans), known_issues.md,
                     v1_data_archive.md + v1_archive.sha256, DEMO.md
@@ -58,7 +63,7 @@ v2 work follows docs/v2_roadmap.md. Read it before any v2 task.
                     build/tape/ = generators with tape_file_runtime.o (Step S shrinker)
 - results/          run outputs (gitignored): raw/<experiment>/ (v2: raw/pilot/), runs.csv, summary.json,
                     charts/, bugs/ (gallery), llm/ (answers + prompts), derived/ (Step 0.2 replay), part2/,
-                    shrink/<set>[_old]/ (Step S)
+                    shrink/<set>[_old]/ (Step S), deep_calib/<problem>/ (v3 V1)
 - dashboard/        Vite + React + Recharts, reads results/summary.json, no backend;
                     Node 22 (.nvmrc) via nvm: `source ~/.nvm/nvm.sh` before npm
 

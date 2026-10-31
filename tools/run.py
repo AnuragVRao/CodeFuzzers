@@ -130,7 +130,7 @@ def command(exp, run, cfg, tmp_out):
     strategy, recipes, extra = ARMS.get(run["strategy"], (run["strategy"], None, []))
     return [str(FUZZER), "--build", str(ROOT / "build" / run["problem"]), "--checker", p["checker"],
             "--max-size", str(p["max_size"]), "--variants", str(p["variants"]),
-            "--fast", "sol" if run["mode"] == "scale" else "bug", "--mode", run["mode"],
+            "--fast", run.get("fast") or ("sol" if run["mode"] == "scale" else "bug"), "--mode", run["mode"],
             "--strategy", strategy, "--recipes", recipes or run["recipes"], "--workers", str(w), "--tests", str(run["tests"] or 1),
             "--time-limit", str(run["time_limit"] or 60), "--seed", str(run.get("seed_base", 1000) + run["repeat"]),
             "--extra-ops", str(run["k"]), "--write-frac", str(run["f"]), "--cpus", cpus,
