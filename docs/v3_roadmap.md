@@ -19,8 +19,8 @@ and forced-guard checks, secondary hypotheses) is cut.
 |---|---|---|---|---|
 | V1 | Deep bugs on 3 problems | 2.5 h | done | 39e9f40 |
 | V2 | trace-cmp value profile | 2 h | done | 59755dd |
-| V3 | Cross-worker splice, origin, equal pool capacity, arms | 2 h | done (design frozen) | |
-| V4 | The experiment (one pre-registered run set) | 2 h | | |
+| V3 | Cross-worker splice, origin, equal pool capacity, arms | 2 h | done (design frozen) | b518f21 |
+| V4 | The experiment (one pre-registered run set) | 2 h | done (H1 supported) | |
 | V5 | Report + README | 1 h | | |
 
 ## Why
@@ -182,3 +182,11 @@ Decided from V2 cost data only, before any guided run on a deep bug, and applied
 3. Smoke runs use the guard-only CF_NO_PERTURB build instead of `--fast sol` (which has no trace-cmp, so a vp arm
    on it would have no value signal).
 4. The deep_bug.hpp capture/rewrite helpers are excluded from coverage (no_sanitize_coverage), see V2 "Leftover check".
+
+## V4 execution note (2026-10-31)
+- The V4 run set was first started right after the V3 commit, before the analysis code existed. It was stopped
+  after 21 finished runs (plus 1 partial file) when the analysis was requested first; only run.py progress lines
+  had been seen. Those 22 files were moved, not deleted, to results/raw/v3_aborted/ and are not used anywhere.
+- The analysis (tools/v3_report.py, with a synthetic 1.5x / no-effect self-test) was committed as 022da45, and then
+  all 900 runs were started fresh from that commit (fuzzer code identical to b518f21). All 900 finished, none
+  failed, all stamped 022da45 with a clean tree. The analysis was run unchanged.
