@@ -3,6 +3,8 @@
 Sets: dev  = the 27 non-focus gallery bugs (results/bugs/<problem>/);
       eval = every focus-problem bug: pilot (results/raw/pilot/), v1 hunt and hunt-focus (results/raw/), and the
              3 focus gallery bugs (results/bugs/).
+eval is shrunk once per distinct input (same problem, same input.txt sha256): the representative is the first bug
+in the fixed order; OUT/representatives.json maps every bug to its representative (per-bug metrics = multiplicity).
 Modes: --capture-only   stage 0 only (regenerated input hashes to input.txt), matched/total per population
        --shrinker new   tools/shrink.py's v2 shrinker, --jobs bugs in parallel, into OUT/<bug id>/
        --shrinker old   tools/shrink.py --old on a copy of each bug directory (OUT/<bug id>/bug/), seed per bug =
@@ -37,6 +39,18 @@ def bug_set(name):
                 out.append((f"{exp}__{p}__{d.name}", p, f"v1-{exp}", d))
         out.append((f"gallery__{p}", p, "v1-gallery", bugs / p))
     return out
+
+
+def representatives(bugs):
+    """-> (distinct bugs in order, {bug id: representative bug id})."""
+    first, rep, out = {}, {}, []
+    for b in bugs:
+        key = (b[1], hashlib.sha256((b[3] / "input.txt").read_bytes()).hexdigest())
+        if key not in first:
+            first[key] = b[0]
+            out.append(b)
+        rep[b[0]] = first[key]
+    return out, rep
 
 
 def capture_one(job):
@@ -92,6 +106,8 @@ def main():
         print(f"{'total':22} {sum(ok.values()):5} / {len(res):5}")
         return 0 if sum(ok.values()) == len(res) else 1
     if a.replay:
+        if a.set == "eval":
+            bugs = representatives(bugs)[0]
         tmp = Path(f"/dev/shm/cf_replay_{os.getpid()}")
         tmp.mkdir(exist_ok=True)
         bad = []
@@ -104,6 +120,10 @@ def main():
         print(f"cold-start replay: {len(bugs) - len(bad)} / {len(bugs)} final inputs reproduce the original verdict"
               + (f"; mismatches (bug, original, now): {bad}" if bad else ""))
         return 1 if bad else 0
+    out.mkdir(parents=True, exist_ok=True)
+    if a.set == "eval":  # one representative per distinct input
+        bugs, rep = representatives(bugs)
+        (out / "representatives.json").write_text(json.dumps(rep, indent=1) + "\n")
     t0 = time.time()
     if a.shrinker == "new":
         with ProcessPoolExecutor(a.jobs) as ex:

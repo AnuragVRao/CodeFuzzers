@@ -4,6 +4,9 @@
   nc2  a candidate whose verdict changes from WA to PE / unexpected EOF is rejected (a sol_bug wrapper that drops
        the last output line; exact-match problem -> PE, custom checker -> PE or EOF)
   det  two shrinker runs on the same bugs give byte-identical inputs and info (wall time excluded)
+  hang regression for the fixed stage-1 hang: a generator that re-pads deleted trailing words with zeros (as
+       fallback_zero does) and a judge that accepts everything; the tape stage must terminate within HANG_BOUND
+       evaluations (the pre-fix logic looped forever on memoised candidates)
 Usage: python3 tools/shrink_test.py [--quick]   (--quick: smaller determinism budget, for the selftest)
 """
 import argparse, json, os, shutil, stat, subprocess, sys
@@ -11,6 +14,7 @@ from pathlib import Path
 import problems, shrink
 
 BUGS = problems.ROOT / "results" / "bugs"
+HANG_BOUND = 64
 EXACT_DEV, CUSTOM_DEV = "range_add_range_min", "two_edge_connected_components"  # its checker gives PE on a truncated output
 
 
@@ -58,6 +62,25 @@ def det(budget, tmp):
     return picks, runs[0] == runs[1], [i["evals"] for _, i in runs[0]]
 
 
+def hang(module=shrink):
+    """-> evaluations used by the tape stage on the re-padding stub (raises if the stage does not finish)."""
+    class Gen:  # always consumes 8 words: missing words read as 0 (fallback_zero re-pads deleted trailing words)
+        def run(self, words, fallback_zero):
+            out = (list(words) + [0] * 8)[:8]
+            return 0, " ".join(map(str, out)) + "\n", out, [(i, 10) for i in range(8)]
+
+    class Judge:
+        def verdict(self, text):
+            return "WA"
+
+    s = object.__new__(module.Shrinker)  # the real tape stage around the stubs
+    s.judge, s.gen = Judge(), Gen()
+    s.max_evals, s.wall, s.t0 = 10_000, 5.0, module.time.time()
+    s.evals, s.text_cache, s.tape_cache, s.best, s.stop, s.stage_evals, s.accepted = 0, {}, {}, None, "done", {}, {}
+    s.tape_stage([5, 3, 0, 0, 0, 0, 0, 0], [(i, 10) for i in range(8)])
+    return s.evals
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--quick", action="store_true")
@@ -75,6 +98,10 @@ def main():
             ok = real == "WA" and fake in ("PE", "EOF")
             print(f"{'PASS' if ok else 'FAIL'}  nc2 {problem}: original verdict {real}; sol_bug minus its last line -> {fake} (rejected)")
             fails += not ok
+        evals = hang()
+        print(f"{'PASS' if evals <= HANG_BOUND else 'FAIL'}  hang regression: re-padding stub, tape stage finished after "
+              f"{evals} evaluations (bound {HANG_BOUND})")
+        fails += evals > HANG_BOUND
         picks, same, evals = det(100 if a.quick else 600, tmp)
         print(f"{'PASS' if same else 'FAIL'}  det: two runs on {picks} (evals {evals}) give byte-identical inputs and info")
         fails += not same
