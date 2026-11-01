@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Sanity check: for every problem, gen -> {fast, brute} -> compare, over seeds 1..N.
 
-Usage: python3 tools/sanity.py [--seeds 50] [--size S | --sizes 5,20,max] [--fast sol|sol_bug] [--only NAME]
+Usage: python3 tools/sanity.py [--seeds 50] [--size S | --sizes 5,20,max] [--fast sol|sol_bug] [--only NAME] [--verifier]
 S is an integer or "max" (max_size from fuzz_config.json); sizes are clamped to max_size.
+--verifier: run build/<problem>/verifier (tools/build.py) on each input first; rejected inputs are counted as
+"verifier_reject" and not compared. Reference validation: --seeds 100 --sizes 5,20,max --verifier.
 Exit code 1 if any WA/RE/TLE.
 """
 import argparse, json, os, sys, time
@@ -14,10 +16,12 @@ CONFIG = json.loads((problems.ROOT / "fuzz_config.json").read_text())
 BUGS = problems.BUGS
 
 
-def test(p, size, seed, fast):
-    """One test -> (outcome, fast_ms, brute_ms), via the shared problems.run_test (variant 0)."""
-    times = {}
-    kind, _ = problems.run_test(p, 0, size, seed, fast, times)
+def test(p, size, seed, fast, verifier=False):
+    """One test -> (outcome, fast_ms, brute_ms), via the shared problems.run_test_bundle (variant 0)."""
+    times, b = {}, problems.bundle_for_problem(p, fast)
+    if verifier:
+        b = dict(b, verifier=str(problems.ROOT / "build" / p["name"] / "verifier"))
+    kind, _ = problems.run_test_bundle(b, size, seed, times)
     return kind, times.get("fast_ms", 0), times.get("brute_ms", 0)
 
 
@@ -39,6 +43,7 @@ def main():
     ap.add_argument("--sizes", default=None, help="comma list, e.g. 5,20,max")
     ap.add_argument("--fast", choices=["sol", "sol_bug"], default="sol")
     ap.add_argument("--only", default=None)
+    ap.add_argument("--verifier", action="store_true", help="skip (count) inputs the problem's verifier rejects")
     a = ap.parse_args()
     sizes = a.sizes.split(",") if a.sizes else [a.size]
 
@@ -49,7 +54,7 @@ def main():
     jobs = [(p, s, seed) for p in probs for s in sizes for seed in range(1, a.seeds + 1)]
     t0 = time.time()
     with ThreadPoolExecutor(os.cpu_count()) as ex:
-        results = list(ex.map(lambda j: test(j[0], resolve(j[1], j[0]["name"]), j[2], a.fast), jobs))
+        results = list(ex.map(lambda j: test(j[0], resolve(j[1], j[0]["name"]), j[2], a.fast, a.verifier), jobs))
 
     stats = {(p["name"], s): Counter() for p in probs for s in sizes}
     ms = {p["name"]: [0.0, 0.0] for p in probs}
@@ -57,7 +62,7 @@ def main():
         stats[p["name"], s][kind] += 1
         ms[p["name"]] = [max(ms[p["name"]][0], mf), max(ms[p["name"]][1], mb)]
 
-    counts = ["ok", *BUGS, "invalid", "gen_skip", "ref_fail", "checker_error"]
+    counts = ["ok", *BUGS, "invalid", "gen_skip", "ref_fail", "checker_error"] + (["verifier_reject"] if a.verifier else [])
     cols = counts + ["max_sol_ms", "max_brute_ms"]
     w = max(len(p["name"]) for p in probs)
     tot = Counter()

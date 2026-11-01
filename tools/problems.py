@@ -158,7 +158,8 @@ def _temp_files():
 
 def run_test_bundle(bundle, size, seed, times=None):
     """One test -> (outcome, input_text); outcome per CLAUDE.md "Outcome of one test".
-    size: int or None (dropped from the template); times: optional dict that receives fast_ms / brute_ms."""
+    size: int or None (dropped from the template); times: optional dict that receives fast_ms / brute_ms.
+    bundle["verifier"] (optional): a verifier binary run on the input first; exit != 0 -> "verifier_reject"."""
     inp, out, ans = _temp_files()
     try:
         with open(inp, "wb") as f:
@@ -169,6 +170,10 @@ def run_test_bundle(bundle, size, seed, times=None):
                 g = None
         if g != 0:
             return "gen_skip", ""
+        if bundle.get("verifier"):
+            with open(inp, "rb") as f:
+                if subprocess.run([bundle["verifier"]], stdin=f, capture_output=True, timeout=TIMEOUT).returncode != 0:
+                    return "verifier_reject", inp.read_text(errors="replace")
         return _judge(bundle, inp, out, ans, times), inp.read_text(errors="replace")
     finally:
         for f in (inp, out, ans):

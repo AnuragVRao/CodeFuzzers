@@ -198,3 +198,11 @@ Same conclusion as the frozen analysis: H1 supported on all three problems.
 The largest cov_features of any run is 3,931 (hunt, frequency_table_of_tree_distance); features >= occupied edge
 slots, so with uniform hashing into 65,536 slots at most 1 - (1 - 1/65536)^3930 ≈ 5.8% of edges share a slot (v3:
 max 979 features, ≤ 1.5%; value-profile map max 486, ≤ 0.7%). All arms use the same binaries and map.
+
+### Reference validation re-run (2026-11-01, post-hoc)
+
+The report's reference-validation sentence (brute vs sol on verifier-accepted inputs) had no saved record, so it was
+re-run: `python3 tools/sanity.py --seeds 100 --sizes 5,20,max --verifier` (variant 0; `--verifier` runs
+build/<problem>/verifier first). 30 problems x 3 sizes x 100 seeds = 9,000 jobs: ok = 8,976, WA = RE = TLE = 0,
+invalid = 0, ref_fail = checker_error = 0, verifier_reject = 0, gen_skip = 24 (all enumerate_triangles). The report
+now quotes these numbers instead of the earlier unsourced "about 9,500".
