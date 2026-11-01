@@ -76,7 +76,7 @@ export default function Scaling({ data }) {
         </LineChart>
       </ResponsiveContainer>
       <p className="explain">
-        Compare each strategy with noshare (navy), not with the ideal line. noshare shares nothing, so its curve is the
+        Compare each strategy with noshare, not with the ideal line. noshare shares nothing, so its curve is the
         hardware limit (hyper-threads, efficiency cores, process start-up). The gap between a strategy and noshare is the
         cost of sharing the pool. Scale runs use identical random recipes for every strategy, so all of them do the same
         work per test.

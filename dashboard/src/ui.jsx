@@ -32,7 +32,8 @@ export function Card({ title, children, className = "" }) {
 export const fmt = (x, digits = 1) =>
   x == null || Number.isNaN(x) ? "—" : Number(x).toLocaleString(undefined, { maximumFractionDigits: digits });
 
-export const colorOf = (meta, s) => meta?.strategy_colors?.[s] ?? "#888";
+// Wrapped in var(--s-<strategy>, ...) so a theme can override one colour (dark mode lightens noshare's navy).
+export const colorOf = (meta, s) => `var(--s-${s}, ${meta?.strategy_colors?.[s] ?? "#888"})`;
 
 export const uniq = (xs) => [...new Set(xs)];
 

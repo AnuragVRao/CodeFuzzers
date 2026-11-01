@@ -70,11 +70,11 @@ export default function Hunt({ data }) {
             ))}
             {sel.map((r, i) => r.tests_to_bug_q1 != null && r.tests_to_bug_q3 != null && (
               <ReferenceLine key={`iqr${i}`} segment={[{ x: i, y: pos(r.tests_to_bug_q1) }, { x: i, y: pos(r.tests_to_bug_q3) }]}
-                stroke="#333" strokeWidth={2} />
+                stroke="var(--fg)" strokeWidth={2} />
             ))}
             {sel.map((r, i) => r.tests_to_bug_median != null && (
               <ReferenceLine key={`med${i}`} segment={[{ x: i - 0.28, y: pos(r.tests_to_bug_median) }, { x: i + 0.28, y: pos(r.tests_to_bug_median) }]}
-                stroke="#111" strokeWidth={3} />
+                stroke="var(--fg)" strokeWidth={3} />
             ))}
             <Scatter name="censored (no bug before time limit)" shape="cross" fill="#C0392B" isAnimationActive={false}
               data={sel.flatMap((r, i) => r.values.map((v, k) => (v == null ? { x: i + jitter(k), y: top, label: "censored" } : null)).filter(Boolean))}>

@@ -3,7 +3,7 @@
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Card, NoData, fmt, uniq } from "../ui.jsx";
 
-const LINE_COLORS = ["#0E8A8A", "#C0392B", "#7D3C98", "#E0A030", "#1B2A4A"];
+const LINE_COLORS = ["#3B82F6", "#EF4444", "#A855F7", "#F59E0B", "#14B8A6"];
 
 export default function Shrinking({ data }) {
   const sc = data.shrink?.scaling || [];

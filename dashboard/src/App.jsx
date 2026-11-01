@@ -1,4 +1,5 @@
 // Top-level component: fetches /summary.json once, shows a tab bar and renders the selected tab.
+// Header button toggles light/dark (data-theme on <html>, remembered in localStorage).
 // Each tab receives the whole summary and handles its own missing sections ("No data yet").
 import { useEffect, useState } from "react";
 import Overview from "./tabs/Overview.jsx";
@@ -14,6 +15,13 @@ const TABS = { Overview, Analyze, Scaling, Hunt, Bugs, Shrinking };
 export default function App() {
   const [data, setData] = useState(undefined); // undefined = loading, null = no summary
   const [tab, setTab] = useState("Overview");
+  const [theme, setTheme] = useState(() => localStorage.getItem("theme") ??
+    (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"));
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem("theme", theme);
+  }, [theme]);
 
   useEffect(() => {
     fetch("/summary.json")
@@ -28,6 +36,9 @@ export default function App() {
       <header>
         <h1>CodeFuzzers</h1>
         <span className="subtitle">parallel differential fuzzing — results</span>
+        <button className="theme" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
+          {theme === "dark" ? "☀ Light" : "☾ Dark"}
+        </button>
       </header>
       <nav className="tabs">
         {Object.keys(TABS).map((t) => (

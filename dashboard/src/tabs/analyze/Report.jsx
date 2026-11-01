@@ -86,11 +86,11 @@ export default function Report({ job }) {
       {(rep.warnings ?? []).map((w) => <div key={w} className="banner warn">{w}</div>)}
       {rep.bug && <FailingTest bug={rep.bug} />}
       {rep.llm && <LlmCard id={job.id} llm={rep.llm} />}
-      {cal.length > 0 && <Card title="Calibration"><Chart data={cal} x="size" log mark={rep.calibration.max_size} lines={[["p75", "#0e8a8a", undefined, "reference time, 75th percentile of 9 inputs"]]} />
+      {cal.length > 0 && <Card title="Calibration"><Chart data={cal} x="size" log mark={rep.calibration.max_size} lines={[["p75", "#3b82f6", undefined, "reference time, 75th percentile of 9 inputs"]]} />
         <div className="meta">reference time per input vs generator size (log–log); sizes above max_size are not fuzzed</div></Card>}
       {sweep.length > 0 && (
         <Card title="Performance">
-          <Chart data={sweep} x="workers" ticks={sweep.map((r) => r.workers)} lines={[["speed-up", "#0e8a8a"], ["ideal", "#888", "5 4"]]} />
+          <Chart data={sweep} x="workers" ticks={sweep.map((r) => r.workers)} lines={[["speed-up", "#3b82f6"], ["ideal", "#888", "5 4"]]} />
           {c && <div>At {c.workers} workers: noshare {fmt(c.median.noshare, 0)} tests/s vs rwlock {fmt(c.median.rwlock, 0)} tests/s — ratio <b>{c.ratio_rwlock_vs_noshare}</b>
             <div className="meta">{c.note}</div></div>}
           {sweep.length === 2 && <div className="meta">1-minute budget: measured at 1 and {sweep[1].workers} workers only.</div>}
