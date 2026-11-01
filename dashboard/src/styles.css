@@ -48,14 +48,40 @@ h2 { color: var(--fg); font-size: 17px; margin: 0 0 10px; }
 .explain { color: var(--muted); font-size: 14px; margin: 8px 0 0; }
 .nodata { padding: 40px; text-align: center; color: var(--muted); border: 1px dashed var(--border); border-radius: var(--radius); }
 
-.headlines { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 16px; }
-.headline { border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; }
+/* Overview: hero chart + 2x2 tiles with micro-charts, pipeline as a flow */
+.overview { display: grid; grid-template-columns: 1.15fr 1fr; gap: 12px; margin-bottom: 16px; }
+.overview .hero { margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.hero-head { display: flex; gap: 14px; align-items: center; }
+.hero-value { font-size: 52px; font-weight: 700; color: var(--primary); line-height: 1; }
+.tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.headline { border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; background: var(--card); }
 .headline .value { font-size: 28px; font-weight: 700; color: var(--primary); }
-.headline .label { font-size: 13px; color: var(--muted); margin-top: 4px; }
+.label { font-size: 13px; color: var(--muted); margin-top: 4px; }
+.label.sub { margin-top: 2px; font-style: italic; }
+.tile { display: flex; flex-direction: column; }
+.micro { margin-top: auto; padding-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.microsvg { width: 100%; height: auto; display: block; overflow: visible; }
+.microsvg .tick { font-size: 11px; fill: var(--muted); }
+.hbar { display: grid; grid-template-columns: 62px 1fr 64px; gap: 8px; align-items: center; font-size: 12px; color: var(--muted); }
+.hbar span:last-child { text-align: right; color: var(--fg); font-variant-numeric: tabular-nums; }
+.track { height: 8px; background: var(--secondary); border-radius: 4px; overflow: hidden; }
+.track div { height: 100%; border-radius: 4px; }
+.bugsq { display: flex; gap: 14px; }
+.bugsq .label { margin: 0 0 4px; font-size: 12px; }
+.squares { display: grid; grid-template-columns: repeat(4, 10px); gap: 3px; }
+.squares span { width: 10px; height: 10px; border-radius: 2px; background: var(--secondary); }
+.squares span.on { background: var(--primary); }
 
-.pipeline { display: flex; gap: 8px; }
-.step { flex: 1; border: 1px solid var(--border); border-top: 4px solid var(--primary); border-radius: var(--radius); padding: 10px; font-size: 13px; }
-.step b { display: block; color: var(--fg); margin-bottom: 4px; font-size: 14px; }
+.pipeline { display: flex; gap: 22px; }
+.step { flex: 1; position: relative; border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; font-size: 13px; }
+.step:not(:last-child)::after { content: "→"; position: absolute; right: -18px; top: 50%; transform: translateY(-50%);
+                                color: var(--muted); font-size: 16px; }
+.step.timed { border: 1.5px dashed var(--primary); background: var(--accent); color: var(--accent-fg); }
+.step-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
+.step-head b { color: var(--fg); font-size: 14px; }
+.step.timed .step-head b { color: var(--accent-fg); }
+.num { width: 22px; height: 22px; border-radius: 50%; background: var(--primary); color: var(--primary-fg);
+       display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; }
 .footnote { font-size: 13px; color: var(--muted); }
 
 .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; }
@@ -80,7 +106,6 @@ th { color: var(--fg); font-weight: 600; }
         max-height: 220px; overflow: auto; margin: 4px 0 0; }
 .outputs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 10px; }
 .diff { background: var(--bad-bg); color: var(--bad-fg); border-radius: 3px; }
-.headline .sub { margin-top: 2px; font-style: italic; }
 .toggle { margin-top: 8px; border: 1px solid var(--primary); color: var(--primary); background: var(--card); border-radius: 6px;
           padding: 4px 10px; font-size: 13px; cursor: pointer; }
 .toggle:hover { background: var(--accent); }
