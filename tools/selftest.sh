@@ -101,6 +101,7 @@ check "pool under ThreadSanitizer (setarch -R)"       tsan_pool_check
 check "tape arena + TapeEntry pool (arena_test, 1 s)" build/tests/arena_test 1
 check "arena under ThreadSanitizer (setarch -R, 1 s)" tsan_arena_check
 check "aggregation self-test (aggregate --selftest)"  python3 tools/aggregate.py --selftest
+check "paired check self-test (paired_check)"        python3 tools/paired_check.py --selftest
 check "correct solutions agree (sanity, 20 seeds)"    python3 tools/sanity.py --seeds 20 --size max
 check "analysis server (e2e fast subset)"             tools/e2e_test.sh --fast
 

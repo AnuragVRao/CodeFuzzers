@@ -193,13 +193,17 @@ stayed within ±5% of noshare, the run-to-run noise band. That is expected: a te
 worker (three process runs through the fork-server) while a pool operation takes microseconds, so the pool is a tiny
 part of the work. Extra pool traffic separates the strategies: copy-on-write snapshots collapse under write-heavy
 traffic exactly as the pool-only benchmark predicts, while the mutex-based strategies stay close to noshare. On the
-original planted bugs the hunt experiments found no difference between random, privately guided and shared-guided
-fuzzing; the tests could only have detected differences of about 1.6× or more, and those bugs are found within a few
-hundred tests, before guidance has much to work with. On deeper, synthetic bugs (v3: a chain of three comparisons,
+original planted bugs the hunt experiments found no statistically significant difference between random, privately
+guided and shared-guided fuzzing. This is not evidence of equivalence: the Mann–Whitney test had 80% power only for
+median ratios of about 1.6× or more (n = 100), and the confirmatory 95% CIs span 0.41–1.93. Those bugs are found within
+a few hundred tests, before guidance has much to work with. A post-hoc paired check (`tools/paired_check.py`) gives
+the same conclusion, and it confirms that no hunt run in any experiment was censored. On deeper, synthetic bugs (v3: a chain of three comparisons,
 about 40,000 random tests to find), with comparison-operand feedback and a splice operator that combines two pool
-entries, a shared pool needed 0.49–0.63× the tests of private pools on all three problems (pre-registered, one-sided
-p_Holm ≤ 5e-4); about 85–90% of the bug-finding tests descended from another worker's pool entry. This shows that
-sharing helps on that bug class, not on typical competitive-programming bugs. Steering the generator's draws (tape recipes) made bug finding slower, not faster, but the same tapes
+entries in both arms, a shared pool needed 0.49–0.63× the tests of private pools on all three problems
+(pre-registered, one-sided p_Holm ≤ 5e-4); about 85–90% of the bug-finding tests descended from another worker's pool
+entry. Because both arms use value profiling and splice, this isolates cross-worker information flow, not the
+separate roles of the value profile and splice (no ablation). The result covers synthetic comparison-chain bugs, not
+typical competitive-programming bugs. Steering the generator's draws (tape recipes) made bug finding slower, not faster, but the same tapes
 give a shrinker that reduces failing inputs far more than shrinking the generator size (on two of the three focus
 problems; on the third both reach the smallest known input). Only qwen3:8b located bugs better than chance.
 
@@ -290,8 +294,10 @@ reference; 3 problems, 8 workers, 100 runs per arm, 120 s limit.
 **Verdict: H1 is supported** on all three problems. In vp-rwlock, 87.5% of children had a parent from another worker
 (chance 7/8), and 85–90 of each problem's 100 bug-finding tests did; 23–44 were splices with a donor from another
 worker. **Caveat:** these deep bugs are synthetic, guarded by comparison chains that value profiling is designed to
-exploit. The result shows that sharing helps on this bug class; it does not show that sharing helps on typical
-competitive-programming bugs (off-by-one, overflow, missed edge cases).
+exploit. Both arms use value profiling and splice; in vp-noshare parents and splice donors come only from the
+worker's own pool. The result therefore isolates cross-worker information flow on this bug class. It does not
+separate the value profile from splice, and it does not show that sharing helps on typical competitive-programming
+bugs (off-by-one, overflow, missed edge cases).
 
 ## Design decisions
 
@@ -379,8 +385,9 @@ with your user's permissions, so it binds to 127.0.0.1 only and must not be expo
   space are small.
 - **LLM evaluation.** One run per model at temperature 0.2 and a fixed seed, on 29 problems; the
   numbers are indicative, not a benchmark.
-- **Post-hoc analyses.** The explanation of the pilot result and the S2 shrinker were developed after the
-  pre-registered results were seen; they are labelled post-hoc.
+- **Post-hoc analyses.** The explanation of the pilot result, the S2 shrinker and the paired sensitivity check
+  (`tools/paired_check.py`) were developed after the pre-registered results were seen; they are labelled post-hoc.
+  The pre-registered analyses remain the primary results.
 - **One build per comparison.** All scaling numbers come from one build (runs listed under *Key results*); throughput
   checks made after the tape code was added were regression gates and are not mixed into the scaling results.
 - **Shrinker floors.** The floors are the smallest failing inputs found by hand, not proven minima.
@@ -391,7 +398,7 @@ with your user's permissions, so it binds to 127.0.0.1 only and must not be expo
 
 ## Limitations and future work
 
-- Deep bugs that are not synthetic comparison chains (v3 shows sharing helps on those), and larger inputs.
+- Deep bugs that are not synthetic comparison chains (v3 only covers those), and larger inputs.
 - A v3 ablation (value profile without splice, splice without value profile) to separate the two mechanisms.
 - Real (historical) bugs from contest submissions instead of planted ones.
 - Bare-metal Linux measurements to remove the WSL2 virtualisation layer.

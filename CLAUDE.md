@@ -50,6 +50,8 @@ v3 work follows docs/v3_roadmap.md. Read it before any v3 task.
     checker_agree_test.py  C++ vs Python checker-outcome mapping
     deep_calib.py   v3 Step V1: deep-bug constants (sampling), trigger check, random-capture calibration
     v3_report.py    v3 Step V4 frozen analysis (H1 tests, descriptive tables; --selftest on synthetic data)
+    paired_check.py post-hoc run census (expected vs actual n, censored, infra) + seed check + block-paired
+                    Wilcoxon / block-bootstrap sensitivity analysis of hunt, hunt-focus, pilot, v3 (--selftest)
     replay_first_bugs.py   replays v1 first bugs (Step 0.2 evidence -> results/derived/)
     analyze.py, server.py, e2e_test.sh   analysis server (upload, queue, SSE) and its end-to-end test
     part2.py        v2 Part 2 pipeline + mut_similarity; fp_sim.py  pilot false-PROCEED simulation

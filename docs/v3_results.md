@@ -104,3 +104,97 @@ Descriptive (not tested): bug-finding tests that were children of a pool entry /
 Both vp arms also needed fewer tests than random-capture (medians 36,546–43,590); that comparison was descriptive only.
 Note that the guided arms' medians (7,774–19,941) are below the calibration band (15,000–120,000), which was set for
 random-capture only.
+
+
+## Post-hoc: paired sensitivity analysis and run census (2026-11-01)
+
+POST-HOC, added after an external review of the report; the pre-registered analyses above (and in docs/v2_results.md
+and tools/aggregate.py) remain the primary results and are unchanged. Command: `python3 tools/paired_check.py`
+(read-only over results/raw/; `--selftest` in tools/selftest.sh).
+
+Why: every arm of block r runs with the same `--seed base + r` (tools/run.py), so runs of one block are paired, which
+Mann-Whitney ignores. Method: Wilcoxon signed-rank on ln(tests_b / tests_a) per block, zero_method "wilcox" (zero
+differences dropped, counted below), same sidedness as the original test, Holm within the original family. The
+estimand is the median over blocks of the paired ratio tests_b / tests_a (not the ratio of medians above), with a 95%
+block-bootstrap CI (2,000 resamples, seed 20261101 + comparison index).
+
+### Census and seed check
+
+Censored = no bug and wall_s >= config.time_limit; infra = no bug and wall_s < time_limit; counted from each run JSON.
+
+```
+## hunt: 2970 runs, expected 99 cells x 30 = 2970; found 2970, censored 0, infra 0; cells with n != 30: 0
+   seed check (seed == 1000 + repeat, block_seed where present): OK
+## hunt-focus: 900 runs, expected 9 cells x 100 = 900; found 900, censored 0, infra 0; cells with n != 100: 0
+   seed check (seed == 1000 + repeat, block_seed where present): OK
+## pilot: 1800 runs, expected 9 cells x 200 = 1800; found 1800, censored 0, infra 0; cells with n != 200: 0
+   seed check (seed == 5000 + repeat, block_seed where present): OK
+## v3: 900 runs, expected 9 cells x 100 = 900; found 900, censored 0, infra 0; cells with n != 100: 0
+   seed check (seed == 6000 + repeat, block_seed where present): OK
+```
+
+All cells have exactly the expected repeats; 0 censored and 0 infra runs in every cell of every experiment.
+hunt: 11 hard-tier problems x 3 arms x workers {1, 8, 20} x 30 repeats = 2,970.
+
+### Results
+
+Exploratory hunt (66 comparisons): 0 of 66 significant after Holm (full table: run the script). At 1 worker rwlock and
+noshare are the same computation (same seed, one pool): 30 of 30 zero differences, rho = 1, in all 11 problems.
+
+### confirmatory (6 comparisons, Holm over 6)
+
+| problem | W | b / a | alt | n | zeros | rho | median paired ratio [95% CI] | p (Wilcoxon) | p_Holm |
+|---|---:|---|---|---:|---:|---:|---|---:|---:|
+| longest_common_substring | 8 | noshare / random | two-sided | 100 | 0 | 0.01 | 0.65 [0.55, 1.20] | 0.132 | 0.658 |
+| longest_common_substring | 8 | rwlock / noshare | two-sided | 100 | 0 | 0.46 | 0.77 [0.56, 1.06] | 0.153 | 0.658 |
+| majority_voting | 8 | noshare / random | two-sided | 100 | 0 | 0.05 | 0.94 [0.56, 1.69] | 0.797 | 1 |
+| majority_voting | 8 | rwlock / noshare | two-sided | 100 | 1 | 0.45 | 1.04 [0.97, 1.12] | 0.348 | 1 |
+| range_linear_add_range_min | 8 | noshare / random | two-sided | 100 | 0 | 0.10 | 0.86 [0.76, 1.21] | 0.926 | 1 |
+| range_linear_add_range_min | 8 | rwlock / noshare | two-sided | 100 | 2 | 0.42 | 1.08 [1.00, 1.47] | 0.092 | 0.552 |
+
+0 of 6 significant after Holm (p_Holm < 0.05)
+
+### pilot (descriptive) (6 comparisons, Holm over 6)
+
+| problem | W | b / a | alt | n | zeros | rho | median paired ratio [95% CI] | p (Wilcoxon) | p_Holm |
+|---|---:|---|---|---:|---:|---:|---|---:|---:|
+| longest_common_substring | 8 | tape-noshare / random-capture | two-sided | 200 | 0 | -0.05 | 1.05 [0.68, 1.43] | 0.857 | 0.857 |
+| longest_common_substring | 8 | tape-rwlock / random-capture | two-sided | 200 | 1 | 0.16 | 0.60 [0.50, 0.84] | 0.000598 | 0.0012 |
+| majority_voting | 8 | tape-noshare / random-capture | two-sided | 200 | 0 | 0.01 | 3.54 [2.34, 5.19] | 4.06e-14 | 1.22e-13 |
+| majority_voting | 8 | tape-rwlock / random-capture | two-sided | 200 | 0 | 0.01 | 4.03 [2.99, 5.80] | 3.28e-15 | 1.31e-14 |
+| range_linear_add_range_min | 8 | tape-noshare / random-capture | two-sided | 200 | 0 | 0.08 | 4.82 [4.00, 5.79] | 1.29e-23 | 7.75e-23 |
+| range_linear_add_range_min | 8 | tape-rwlock / random-capture | two-sided | 200 | 0 | 0.06 | 6.49 [5.31, 8.80] | 2.02e-22 | 1.01e-21 |
+
+5 of 6 significant after Holm (p_Holm < 0.05)
+
+The pilot pre-registered a median-ratio criterion, not a test; these p values are descriptive. tape-rwlock on
+longest_common_substring has a median paired ratio of 0.60 [0.50, 0.84], a different estimand from the pre-registered
+ratio of medians (0.793); the criterion and the STOP verdict are unchanged.
+
+### v3 H1 (3 comparisons, Holm over 3)
+
+| problem | W | b / a | alt | n | zeros | rho | median paired ratio [95% CI] | p (Wilcoxon) | p_Holm |
+|---|---:|---|---|---:|---:|---:|---|---:|---:|
+| range_add_range_min | 8 | vp-rwlock / vp-noshare | less | 100 | 0 | 0.40 | 0.47 [0.39, 0.57] | 1.98e-12 | 5.94e-12 |
+| range_affine_range_sum | 8 | vp-rwlock / vp-noshare | less | 100 | 0 | 0.33 | 0.63 [0.52, 0.81] | 7.73e-06 | 8.9e-06 |
+| range_set_range_composite | 8 | vp-rwlock / vp-noshare | less | 100 | 0 | 0.14 | 0.71 [0.41, 0.85] | 4.45e-06 | 8.9e-06 |
+
+3 of 3 significant after Holm (p_Holm < 0.05)
+
+Same conclusion as the frozen analysis: H1 supported on all three problems.
+
+### Pre-registration timing (git commit times vs earliest run-file mtime, UTC)
+
+| result | plan / freeze commit | data | pre-registered? |
+|---|---|---|---|
+| hunt-focus | rule f2392e3 2026-10-21 18:44, problems 078b143 18:53 | 2026-10-22 05:09–05:11 (stamped 078b143) | yes |
+| pilot | plan 90cc267 2026-10-30 19:39:51 (Amendment 1 b94f7ce 19:47:39) | 19:47:52–19:54:18 (stamped b94f7ce) | yes |
+| v3 H1 | long plan 3ff4493 12:57 replaced by short plan 3ecab06 13:06; design + test + n = 100 frozen b518f21 13:40; analysis 022da45 13:44 | counted 13:45–14:36 (stamped 022da45) | yes; 21 aborted runs (13:41–13:42, results/raw/v3_aborted/) printed tests-to-bug in run.py progress lines before 022da45, unused |
+| shrink S1 | a4a6aa4 2026-10-31 05:24:42 | EVAL from 05:25:04 | yes |
+| shrink S2 | 618f6fc 08:37:45 | EVAL_S2 ~08:38–10:21 | evaluation yes; design post-hoc (after S1 EVAL) |
+
+### Coverage-map collisions (descriptive)
+
+The largest cov_features of any run is 3,931 (hunt, frequency_table_of_tree_distance); features >= occupied edge
+slots, so with uniform hashing into 65,536 slots at most 1 - (1 - 1/65536)^3930 ≈ 5.8% of edges share a slot (v3:
+max 979 features, ≤ 1.5%; value-profile map max 486, ≤ 0.7%). All arms use the same binaries and map.
