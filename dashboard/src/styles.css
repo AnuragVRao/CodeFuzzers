@@ -72,17 +72,49 @@ h2 { color: var(--fg); font-size: 17px; margin: 0 0 10px; }
 .squares span { width: 10px; height: 10px; border-radius: 2px; background: var(--secondary); }
 .squares span.on { background: var(--primary); }
 
-.pipeline { display: flex; gap: 22px; }
-.step { flex: 1; position: relative; border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; font-size: 13px; }
-.step:not(:last-child)::after { content: "→"; position: absolute; right: -18px; top: 50%; transform: translateY(-50%);
-                                color: var(--muted); font-size: 16px; }
+/* Pipeline: snake layout. Columns: box | arrow | box. Row 2 (timed run) spans all three. */
+.pipe { display: grid; grid-template-columns: 1fr 44px 1fr; align-items: stretch; }
+.pipe .wide { grid-column: 1 / -1; }
+.arrow { display: flex; align-items: center; justify-content: center; color: var(--primary); }
+.arrow svg { width: 28px; height: 28px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.arrow.down svg { transform: rotate(90deg); }
+.arrow-row { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 44px 1fr; height: 36px; }
+.arrow-row.to-right .arrow { grid-column: 3; }
+.arrow-row.to-left .arrow { grid-column: 1; }
+.step { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; font-size: 13.5px; line-height: 1.45; }
+.step code, .pchip, .stack span b, .stack span:not(:has(b)) { font-family: var(--mono); font-size: 12px; }
+.step-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+.step-head b { color: var(--fg); font-size: 15px; }
+.step-head code { color: var(--muted); }
 .step.timed { border: 1.5px dashed var(--primary); background: var(--accent); color: var(--accent-fg); }
-.step-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
-.step-head b { color: var(--fg); font-size: 14px; }
-.step.timed .step-head b { color: var(--accent-fg); }
+.step.timed .step-head b, .step.timed .step-head code { color: var(--accent-fg); }
+.facts { display: grid; grid-template-columns: 92px 1fr; gap: 7px 12px; margin: 0; }
+.facts dt { color: var(--muted); font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; padding-top: 2px; }
+.facts dd { margin: 0; }
+.chiprow { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; }
+.pchip { border: 1px solid var(--border); background: var(--surface); border-radius: 4px; padding: 0 6px; line-height: 1.6; }
+.flow-arrow { color: var(--muted); }
+.step code { white-space: nowrap; }
+.timed-body { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 24px; }
+.sub-h { font-weight: 700; margin-bottom: 6px; }
+.sub-h span { font-weight: 400; opacity: 0.75; margin-left: 6px; font-size: 12px; }
+.sub-n { font-size: 12px; opacity: 0.8; margin-top: 8px; }
+.loop { margin: 0; padding-left: 20px; }
+.loop li { margin: 1px 0; }
+.stack { display: flex; flex-direction: column; gap: 5px; }
+.stack span { display: flex; justify-content: space-between; gap: 8px; border: 1px solid var(--border); border-radius: 4px;
+              padding: 2px 8px; background: var(--card); color: var(--fg); }
+.stack span { font-size: 12.5px; }
+.stack b { font-weight: 600; }
+.stack i { font-style: normal; color: var(--muted); }
+@media (max-width: 900px) {
+  .pipe, .arrow-row { grid-template-columns: 1fr; }
+  .pipe > .arrow { height: 36px; } .pipe > .arrow svg { transform: rotate(90deg); }
+  .arrow-row .arrow { grid-column: 1 !important; }
+  .timed-body { grid-template-columns: 1fr; gap: 14px; }
+}
 .num { width: 22px; height: 22px; border-radius: 50%; background: var(--primary); color: var(--primary-fg);
        display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; }
-.footnote { font-size: 13px; color: var(--muted); }
 
 .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; }
 .badge.warn { background: var(--warn-bg); color: var(--warn); }

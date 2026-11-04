@@ -1,16 +1,98 @@
 // Overview tab: the headline numbers from meta.headline, each with a small chart of the data behind it
 // (hero: speed-up vs workers; pinning bars; one square per planted bug; per-bug shrink strip; shrinker
-// speed-up sparkline), the 5-step pipeline as a flow, and a footnote with generation time, commits and presets.
+// speed-up sparkline), and the 5-step pipeline (essentials of the report's pipeline figure).
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Card, NoData, colorOf, fmt, uniq } from "../ui.jsx";
 
-const STEPS = [
-  ["Preparation", "Library Checker problems curated and bundled (generator, brute reference, fast solution, checker); lightweight and path-tracking builds."],
-  ["Control", "Python orchestrator varies workers, strategy, read/write mix and seed; pins cores; repeats every run."],
-  ["Timed run", "Workers take a recipe from the shared pool, generate the test, run reference and fast solution, compare, and add recipes that reach new coverage."],
-  ["Shrinking", "Parallel generator-space shrinking finds the smallest input that still fails, then re-validates it."],
-  ["Aggregation", "Medians, IQRs and Mann–Whitney tests across workers, strategies and workloads; charts for speed-up, efficiency and time to bug. A local LLM (Ollama) explains shrunk failures and drafts generators, outside the timed region."],
-];
+// Pipeline (essentials of the report's pipeline figure; every claim checked against the code), laid out as a snake:
+// 1 -> 2, down to 3 (full width, the timed region), down to 4 -> 5.
+const Arrow = ({ dir }) => (
+  <div className={`arrow ${dir}`} aria-hidden="true">
+    <svg viewBox="0 0 24 24"><path d="M2 12h18M14 6l6 6-6 6" /></svg>
+  </div>
+);
+const Step = ({ n, name, where, timed, children }) => (
+  <div className={`step${timed ? " timed" : ""}`}>
+    <div className="step-head"><span className="num">{n}</span><b>{name}</b>
+      {where && <code>{where}</code>}{timed && <span className="badge yes">timed region</span>}</div>
+    {children}
+  </div>
+);
+// Label / value rows; an array value renders as chips (joined by arrows when the row is a flow).
+const Facts = ({ rows }) => (
+  <dl className="facts">
+    {rows.map(([k, v]) => [<dt key={`${k}-k`}>{k}</dt>,
+      <dd key={`${k}-v`}>{Array.isArray(v) ? (
+        <span className="chiprow">{v.map((c, i) => [k === "Flow" && i > 0 && <span className="flow-arrow" key={`a${c}`}>→</span>,
+          <span className="pchip" key={c}>{c}</span>])}</span>) : v}</dd>])}
+  </dl>
+);
+const LOOP = ["pick a recipe from the pool", "mutate: new size + fresh seed (or tape edits)", "generator → test input",
+  "reference and fast solution → outputs", "compare → ok · WA · RE · TLE", "new coverage → add recipe to the pool"];
+const POOLS = [["global", "1 mutex"], ["sharded", "16 mutexes"], ["rwlock", "shared_mutex"], ["snapshot", "copy-on-write swap"],
+  ["noshare", "private pool per worker"]];
+
+function Pipeline() {
+  return (
+    <div className="pipe">
+      <Step n={1} name="Preparation">
+        <Facts rows={[
+          ["Problems", "30 from Library Checker: 12 array, 8 string, 5 graph, 5 tree"],
+          ["Files", ["generator", "brute reference", "sol.cpp", "sol_bug.cpp", "verifier", "checker"]],
+          ["Builds", <>linked with the fork-server runtime; coverage builds add <code>trace-pc</code></>],
+        ]} />
+      </Step>
+      <Arrow dir="right" />
+      <Step n={2} name="Control" where="tools/run.py">
+        <Facts rows={[
+          ["Plans", "strategy × workers × workload × repeat"],
+          ["Order", "randomised blocks, discarded warm-up run"],
+          ["Runs", "one at a time; collects the run JSON, never touches a test while the clock runs"],
+        ]} />
+      </Step>
+      <div className="arrow-row to-right"><Arrow dir="down" /></div>
+      <div className="wide">
+        <Step n={3} name="Timed run" where="core/fuzzer.cpp" timed>
+          <div className="timed-body">
+            <div>
+              <div className="sub-h">Worker loop <span>each thread pinned to one CPU</span></div>
+              <ol className="loop">{LOOP.map((t) => <li key={t}>{t}</li>)}</ol>
+              <div className="sub-n">hunt mode: the first bug stops all workers</div>
+            </div>
+            <div>
+              <div className="sub-h">Fork-servers <span>own set per worker</span></div>
+              <div className="stack">{["generator", "reference", "fast"].map((f) => <span key={f}>{f}</span>)}</div>
+              <div className="sub-n">one forked child per test; coverage goes to a 64 KiB shared-memory edge map</div>
+            </div>
+            <div>
+              <div className="sub-h">Shared pool <span>core/pool.hpp</span></div>
+              <div className="stack">{POOLS.map(([k, d]) => <span key={k}><b>{k}</b><i>{d}</i></span>)}</div>
+              <div className="sub-n">the only state shared between workers</div>
+            </div>
+          </div>
+        </Step>
+      </div>
+      <div className="arrow-row to-left"><Arrow dir="down" /></div>
+      <Step n={4} name="Shrinking">
+        <Facts rows={[
+          ["Input", "the first failing recipe"],
+          ["Generator", "smaller sizes and fresh seeds, candidates run in parallel"],
+          ["Tape", "truncate, delete, zero, reduce; then line and token ddmin"],
+          ["Kept if", "the verifier accepts the input and the bug repeats"],
+        ]} />
+      </Step>
+      <Arrow dir="right" />
+      <Step n={5} name="Aggregation">
+        <Facts rows={[
+          ["Input", "per-run JSON (counts, rates, times)"],
+          ["Flow", ["flatten.py", "runs.csv", "aggregate.py", "summary.json", "charts + dashboard"]],
+          ["Statistics", "medians, IQR, Mann–Whitney U with Holm correction, bootstrap CIs"],
+          ["LLM", "local Ollama explains shrunk bugs, outside the timed region"],
+        ]} />
+      </Step>
+    </div>
+  );
+}
 
 const median = (xs) => {
   const s = xs.filter((x) => x != null).sort((a, b) => a - b), n = s.length;
@@ -172,26 +254,7 @@ export default function Overview({ data }) {
           </Tile>
         </div>
       </div>
-      <Card title="Pipeline">
-        <div className="pipeline">
-          {STEPS.map(([name, text], i) => (
-            <div className={`step${name === "Timed run" ? " timed" : ""}`} key={name}>
-              <div className="step-head"><span className="num">{i + 1}</span><b>{name}</b>
-                {name === "Timed run" && <span className="badge yes">timed region</span>}</div>
-              {text}
-            </div>
-          ))}
-        </div>
-      </Card>
-      <p className="footnote">
-        Generated {m.generated_at} · commits {(m.commits || []).join(", ")} · presets:{" "}
-        {Object.entries(m.preset || {}).map(([sec, p]) => (
-          <span key={sec}>
-            {sec}{" "}
-            {p === "quick" ? <span className="badge warn">quick — preliminary</span> : <span className="badge yes">full</span>}{" "}
-          </span>
-        ))}
-      </p>
+      <Card title="Pipeline"><Pipeline /></Card>
     </>
   );
 }
